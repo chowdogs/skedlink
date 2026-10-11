@@ -17,11 +17,13 @@
 - Daily rent generation at 00:05 Asia/Manila, plus a landlord “Generate due rent” action. Deterministic bill IDs prevent duplicate rent charges.
 - Login/profile restoration after refresh, including return from payment checkout.
 
-## Not yet live
+## Deployment status
 
-These are local source changes. Firebase functions, indexes, Firestore/Storage rules and the legacy-data migration must be deployed/applied before the connected Firebase app can use them. No production data was changed by the implementation work.
+The frontend is deployed at https://skedlink-taupe.vercel.app from GitHub `main` (implementation commit `afa46ed`). Vercel reported a successful deployment and the public JavaScript bundle contains the new payment and advance workflows.
 
-PayMongo code is restricted to **test keys**. Actual provider checkout and webhook delivery require the user's test secret key, webhook signing secret and a reachable deployed callback. Local tests mock the provider response; they do not demonstrate a real PayMongo transaction.
+Firebase backend deployment remains blocked by the project's disabled billing. Cloud Functions is not enabled and the project has no Storage bucket. The project owner must enable Blaze before Functions and private PDF storage can be provisioned. Functions, indexes, Firestore/Storage rules and the legacy-data migration still need deployment. A recursive read-only backup captured 103 existing Firestore documents in ignored local artifacts; no production database records were changed.
+
+PayMongo code is restricted to **test keys**. The supplied test key was accepted by PayMongo. A real provider test checkout session was created with card, GCash and Maya enabled, then expired without payment. The key is saved only in an ignored local secret file, pending upload to Firebase Secret Manager. Webhook registration, the signing secret and end-to-end payment confirmation remain pending backend deployment. Automated settlement tests use mocked provider responses.
 
 The commission is a test accounting entry. Automated marketplace split payouts, escrow custody, refunds and dispute handling are not implemented. Gateway processing charges are not represented as platform revenue. Do not describe the demo as real escrow or payouts.
 
@@ -88,7 +90,7 @@ Tests use only the `demo-skedlink` emulator project. A Windows emulator may leav
 - 4 React interaction tests passed.
 - 12 rental-domain tests passed.
 - 16 Firestore/Storage rules and workflow integration tests passed against local emulators.
-- The production build compiled successfully. Browser-based end-to-end checkout against PayMongo remains pending the test credentials and deployment.
+- The production build compiled successfully and the frontend was deployed through Vercel. Provider test checkout creation and expiration passed; browser-based payment completion and webhook delivery remain pending backend deployment.
 - Production-only dependency audit for the new Functions package reported zero known vulnerabilities. Development tooling and the existing frontend dependency tree are not covered by that result.
 
 ## Defense walkthrough after deployment
