@@ -1,0 +1,7 @@
+{
+  "indexes": [
+    { "collectionGroup": "inquiries", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "propertyId", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }] },
+    { "collectionGroup": "inquiries", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "landlordUid", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }] }
+  ],
+  "fieldOverrides": []
+}

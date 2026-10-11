@@ -1,3 +1,4 @@
+import { PLANS, money } from '../../lib/rentalTerms'
 import React, { useState } from 'react'
 import { Input, Label } from '../ui/Input'
 import { useAuth } from '../../contexts/AuthContext'
@@ -5,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext'
 export const Register = ({ onRegister, onGoToLogin, onBack }) => {
   const { register } = useAuth()
   const [role, setRole] = useState('seeker')
+  const [selectedPlan, setSelectedPlan] = useState(1)
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
@@ -21,6 +23,7 @@ export const Register = ({ onRegister, onGoToLogin, onBack }) => {
     if (password.length < 6) { setError('Password must be at least 6 characters.'); return }
     setLoading(true)
     try {
+      if (role === 'owner' && selectedPlan > 1) window.sessionStorage.setItem('skedlink:onboarding-plan', String(selectedPlan))
       const profile = await register(email, password, fullName, role, phone)
       onRegister(profile)
     } catch (err) {
@@ -172,6 +175,7 @@ export const Register = ({ onRegister, onGoToLogin, onBack }) => {
               </div>
             )}
 
+            {role === 'owner' && <label className='block text-sm font-medium'>Landlord plan<select className='block w-full border rounded-xl p-3 mt-1' value={selectedPlan} onChange={e => setSelectedPlan(Number(e.target.value))}>{PLANS.map(p => <option key={p.limit} value={p.limit}>{p.label} — {p.limit} room(s) — {money(p.amount)} / month</option>)}</select><span className='block text-xs text-slate-500 mt-2'>Free includes one room. Paid access activates after checkout in Plans; no trial.</span></label>}
             <button
               type='submit'
               disabled={loading}

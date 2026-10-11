@@ -1,4 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react'
+import { RentalTermsFields } from '../components/property/RentalTermsFields'
+import { exportReport } from '../../lib/exportReport'
+import { ApplicationsPanel } from '../components/property/ApplicationsPanel'
+import { PaymentsPanel, useRecords } from '../components/billing/PaymentsPanel'
+import { SubscriptionPanel } from '../components/billing/SubscriptionPanel'
+import { DEFAULT_TERMS, priceLabel, formatDate, listingLimit } from '../../lib/rentalTerms'
+import { platform } from '../../lib/platform'
+import React, { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -15,24 +22,13 @@ import { ConfirmModal } from '../ui/ConfirmModal'
 import {
   collection, query, where, onSnapshot,
   addDoc, deleteDoc, doc, serverTimestamp,
-  updateDoc, arrayUnion, arrayRemove, deleteField,
-  setDoc, getDoc, getDocs
+  updateDoc
 } from 'firebase/firestore'
 import { db } from '../../firebase'
 import { useAuth } from '../../contexts/AuthContext'
 import { compressToBase64 } from '../../lib/compressToBase64'
-import { notify, currentMonth } from '../../lib/notify'
-import { getCurrentActivityPhrase } from '../../lib/scheduleUtils'
+import { notify } from '../../lib/notify'
 
-// Due date = same day-of-month as approval, but in the following month
-const tenantDueDate = (billingMonth, approvedDay) => {
-  const [y, m] = billingMonth.split('-').map(Number)
-  const nextM = m === 12 ? 1 : m + 1
-  const nextY = m === 12 ? y + 1 : y
-  const lastDayOfNext = new Date(nextY, nextM, 0).getDate()
-  const day = Math.min(approvedDay, lastDayOfNext)
-  return `${nextY}-${String(nextM).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-}
 
 const PROPERTY_TYPES = ['Condo/Apartment', 'Studio', 'Room', 'House', 'Townhouse']
 const AMENITIES = [
@@ -47,7 +43,7 @@ const EMPTY_FORM = {
   propertyType: '', amenities: [],
   curfewEnabled: false, curfew: '',
   genderRestriction: 'none', photos: [], location: null,
-  permits: {}, houseRules: '', emergencyContacts: []
+  rentalTerms: DEFAULT_TERMS, permits: {}, houseRules: '', emergencyContacts: []
 }
 
 const STATUS_BADGE = { pending: 'warning', active: 'primary', approved: 'success', closed: 'danger' }
@@ -113,7 +109,7 @@ const CHORE_STATUS = {
 export const OwnerDashboard = ({ user }) => {
   const { updateUserProfile, changePassword, logout } = useAuth()
   const { openConversation } = useMessages()
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState(() => new URLSearchParams(window.location.search).has('checkout') ? 'payments' : window.sessionStorage.getItem('skedlink:onboarding-plan') ? 'plans' : 'overview')
   const [properties, setProperties] = useState([])
   const [inquiries, setInquiries] = useState([])
   const [bills, setBills] = useState([])
@@ -124,6 +120,10 @@ export const OwnerDashboard = ({ user }) => {
   const [viewingTenant, setViewingTenant] = useState(null)
   const [lightboxImage, setLightboxImage] = useState(null)
   const [showPostBill, setShowPostBill] = useState(false)
+  const [maintenanceCharge, setMaintenanceCharge] = useState(null)
+  const [subscriptions] = useRecords('subscriptions', 'landlordUid', user.uid)
+  const premium = listingLimit(subscriptions[0]) > 1
+  useEffect(() => { window.sessionStorage.removeItem('skedlink:onboarding-plan') }, [])
   const [showCreateChore, setShowCreateChore] = useState(false)
   const [reviewPaymentData, setReviewPaymentData] = useState(null)
   const [moveoutRequests, setMoveoutRequests] = useState([])
@@ -138,7 +138,7 @@ export const OwnerDashboard = ({ user }) => {
   const [formData, setFormData] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
-  const rentGenRunRef = useRef(false)
+  useEffect(() => { const navigate = e => setActiveTab(e.detail.tab); window.addEventListener('skedlink:navigate', navigate); return () => window.removeEventListener('skedlink:navigate', navigate) }, [])
 
   // Profile state
   const [profilePhoto, setProfilePhoto] = useState(user.profilePhoto || '')
@@ -161,33 +161,6 @@ export const OwnerDashboard = ({ user }) => {
     const q = query(collection(db, 'properties'), where('ownerId', '==', user.uid))
     return onSnapshot(q, (snap) => setProperties(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
   }, [user.uid])
-
-  // Sync tenantDetails name+photo from the live users collection whenever properties load
-  useEffect(() => {
-    if (properties.length === 0) return
-    const sync = async () => {
-      for (const property of properties) {
-        const tenantEntries = Object.entries(property.tenantDetails || {})
-        if (tenantEntries.length === 0) continue
-        const updates = {}
-        for (const [uid, details] of tenantEntries) {
-          try {
-            const snap = await getDoc(doc(db, 'users', uid))
-            if (!snap.exists()) continue
-            const u = snap.data()
-            const freshName = u.fullName || u.name || ''
-            const freshPhoto = u.profilePhoto || ''
-            if (freshName && freshName !== details.name) updates[`tenantDetails.${uid}.name`] = freshName
-            if (freshPhoto !== (details.profilePhoto || '')) updates[`tenantDetails.${uid}.profilePhoto`] = freshPhoto
-          } catch {}
-        }
-        if (Object.keys(updates).length > 0) {
-          try { await updateDoc(doc(db, 'properties', property.id), updates) } catch {}
-        }
-      }
-    }
-    sync()
-  }, [properties.length])
 
   useEffect(() => {
     const q = query(collection(db, 'inquiries'), where('landlordUid', '==', user.uid))
@@ -228,53 +201,6 @@ export const OwnerDashboard = ({ user }) => {
     const q = query(collection(db, 'announcements'), where('landlordUid', '==', user.uid))
     return onSnapshot(q, snap => setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
   }, [user.uid])
-
-  // Auto-generate monthly rent bills whenever bills or properties change
-  useEffect(() => {
-    if (properties.length === 0 || rentGenRunRef.current) return
-    const run = async () => {
-      rentGenRunRef.current = true
-      const month = currentMonth()
-      for (const property of properties) {
-        const tenantEntries = property.tenantDetails ? Object.entries(property.tenantDetails) : []
-        for (const [tenantUid, tenantInfo] of tenantEntries) {
-          const alreadyExists = bills.some(b =>
-            b.type === 'rent' && b.propertyId === property.id &&
-            b.month === month && b.tenantUid === tenantUid
-          )
-          if (!alreadyExists) {
-            const approvedDay = tenantInfo?.approvedDay || new Date().getDate()
-            const dueDate = tenantDueDate(month, approvedDay)
-            try {
-              await addDoc(collection(db, 'bills'), {
-                propertyId: property.id,
-                propertyTitle: property.title,
-                title: `Monthly Rent — ${month}`,
-                totalAmount: Number(property.price),
-                perTenantAmount: Number(property.price),
-                splitCount: 1,
-                type: 'rent',
-                isRevenue: true,
-                tenantUid,
-                month,
-                dueDate,
-                landlordUid: user.uid,
-                createdAt: serverTimestamp(),
-              })
-              await notify(tenantUid, {
-                type: 'bill',
-                title: 'Monthly Rent Bill Ready',
-                body: `Your rent of ₱${Number(property.price).toLocaleString()} for ${month} is due by ${dueDate}.`,
-                tab: 'myhome',
-              })
-            } catch {}
-          }
-        }
-      }
-      rentGenRunRef.current = false
-    }
-    run()
-  }, [properties, bills, user.uid])
 
   // Overdue bill notifications
   useEffect(() => {
@@ -320,28 +246,7 @@ export const OwnerDashboard = ({ user }) => {
     if (!formData.location) { setFormError('Please pin the property location on the map.'); return }
     setSaving(true)
     try {
-      await addDoc(collection(db, 'properties'), {
-        ownerId: user.uid,
-        title: formData.title,
-        description: formData.description,
-        price: Number(formData.price),
-        capacity: Number(formData.capacity),
-        propertyType: formData.propertyType,
-        amenities: formData.amenities,
-        rules: {
-          curfewEnabled: formData.curfewEnabled,
-          curfew: formData.curfewEnabled ? (formData.curfew || 'Set time') : 'No Curfew',
-          genderRestriction: formData.genderRestriction
-        },
-        photos: formData.photos,
-        location: formData.location,
-        permits: formData.permits || {},
-        houseRules: formData.houseRules || '',
-        emergencyContacts: formData.emergencyContacts || [],
-        tenants: [],
-        tenantDetails: {},
-        createdAt: serverTimestamp()
-      })
+      await platform('saveProperty', { property: { ...formData, rules: { curfewEnabled: formData.curfewEnabled, curfew: formData.curfewEnabled ? formData.curfew : 'No Curfew', genderRestriction: formData.genderRestriction } } })
       setFormData(EMPTY_FORM)
       setShowAddForm(false)
     } catch (err) {
@@ -358,86 +263,11 @@ export const OwnerDashboard = ({ user }) => {
       variant: 'danger',
       icon: 'bi-building-fill-x',
       confirmLabel: 'Delete Property',
-      onConfirm: async () => { await deleteDoc(doc(db, 'properties', propertyId)) },
+      onConfirm: async () => { await platform('deleteProperty', { id: propertyId }) },
     })
   }
 
-  const handleApprove = (inq) => {
-    setDialog({
-      title: 'Approve Tenant',
-      message: `Approve ${inq.tenantName} for "${inq.propertyTitle}"? A rent bill and group chat will be set up automatically.`,
-      variant: 'primary',
-      icon: 'bi-patch-check-fill',
-      confirmLabel: 'Approve',
-      onConfirm: async () => {
-        let tenantPhoto = ''
-        try {
-          const snap = await getDoc(doc(db, 'users', inq.tenantUid))
-          if (snap.exists()) tenantPhoto = snap.data().profilePhoto || ''
-        } catch {}
-
-        const approvedDay = new Date().getDate()
-        await updateDoc(doc(db, 'properties', inq.propertyId), {
-          tenants: arrayUnion(inq.tenantUid),
-          [`tenantDetails.${inq.tenantUid}`]: {
-            name: inq.tenantName,
-            email: inq.tenantEmail,
-            phone: inq.tenantPhone || '',
-            profilePhoto: tenantPhoto,
-            approvedDay,
-          }
-        })
-        await updateDoc(doc(db, 'inquiries', inq.id), { status: 'approved', unreadByTenant: true })
-        await setDoc(doc(db, 'propertyChats', inq.propertyId), {
-          participantUids: arrayUnion(inq.tenantUid, user.uid),
-          participantNames: {
-            [inq.tenantUid]: inq.tenantName,
-            [user.uid]: user.fullName || user.name || 'Landlord'
-          },
-          propertyTitle: inq.propertyTitle
-        }, { merge: true })
-
-        const property = properties.find(p => p.id === inq.propertyId)
-        const month = currentMonth()
-        const dueDate = tenantDueDate(month, approvedDay)
-        const alreadyExists = bills.some(b =>
-          b.type === 'rent' && b.propertyId === inq.propertyId &&
-          b.month === month && b.tenantUid === inq.tenantUid
-        )
-        if (!alreadyExists && property) {
-          await addDoc(collection(db, 'bills'), {
-            propertyId: inq.propertyId,
-            propertyTitle: inq.propertyTitle,
-            title: `Monthly Rent — ${month}`,
-            totalAmount: Number(property.price),
-            perTenantAmount: Number(property.price),
-            splitCount: 1,
-            type: 'rent',
-            isRevenue: true,
-            tenantUid: inq.tenantUid,
-            month,
-            dueDate,
-            landlordUid: user.uid,
-            createdAt: serverTimestamp(),
-          })
-        }
-        await notify(inq.tenantUid, {
-          type: 'approval',
-          title: 'Rental Application Approved!',
-          body: `Your application for "${inq.propertyTitle}" has been approved. Welcome home!`,
-          tab: 'myhome',
-        })
-        if (property) {
-          await notify(inq.tenantUid, {
-            type: 'bill',
-            title: 'Monthly Rent Bill Ready',
-            body: `Your rent of ₱${Number(property.price).toLocaleString()} for ${month} is due by ${dueDate}.`,
-            tab: 'myhome',
-          })
-        }
-      },
-    })
-  }
+  const handleApprove = () => setActiveTab('applications')
 
   const handleApprovePayment = async (paymentId, tenantUid, billTitle, amount) => {
     try {
@@ -526,13 +356,7 @@ export const OwnerDashboard = ({ user }) => {
   }
 
   const evictTenant = async (propertyId, propertyTitle, tenantUid, tenantName, moveoutReqId = null) => {
-    await updateDoc(doc(db, 'properties', propertyId), {
-      tenants: arrayRemove(tenantUid),
-      [`tenantDetails.${tenantUid}`]: deleteField()
-    })
-    const inq = inquiries.find(i => i.propertyId === propertyId && i.tenantUid === tenantUid)
-    if (inq) await updateDoc(doc(db, 'inquiries', inq.id), { status: 'closed' })
-    if (moveoutReqId) await updateDoc(doc(db, 'moveoutRequests', moveoutReqId), { status: 'confirmed' })
+    await platform('removeTenant', { propertyId, tenantUid, moveoutReqId })
   }
 
   const handleRemoveTenant = (property, tenantUid, tenantName) => {
@@ -581,7 +405,7 @@ export const OwnerDashboard = ({ user }) => {
 
   const handleMaintenanceStatus = async (req, newStatus) => {
     try {
-      await updateDoc(doc(db, 'maintenanceRequests', req.id), { status: newStatus })
+      await platform('maintenanceStatus', { id: req.id, status: newStatus })
       const statusLabel = newStatus === 'in_progress' ? 'is being worked on' : 'has been resolved'
       await notify(req.tenantUid, {
         type: 'default',
@@ -729,9 +553,9 @@ export const OwnerDashboard = ({ user }) => {
   // Analytics — only bills marked isRevenue count toward the landlord's income
   const revenueBillIds = new Set(bills.filter(b => b.isRevenue).map(b => b.id))
   const paidPayments = payments.filter(p => p.status === 'paid')
-  const paidRevenuePayments = paidPayments.filter(p => revenueBillIds.has(p.billId))
-  const totalRevenue = paidRevenuePayments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
-  const estMonthlyRent = properties.reduce((s, p) => s + (Number(p.price) || 0) * (p.tenants?.length || 0), 0)
+  const paidRevenuePayments = paidPayments.filter(p => p.revenueAmount > 0 || revenueBillIds.has(p.billId))
+  const totalRevenue = paidRevenuePayments.reduce((s, p) => s + Number(p.revenueAmount ?? p.amount ?? 0), 0)
+  const estMonthlyRent = inquiries.filter(i => i.status === 'approved' && i.selection?.period === 'month').reduce((s, i) => s + Number(i.selection.rate), 0)
   const pendingAmount = payments
     .filter(p => p.status === 'under_review' && revenueBillIds.has(p.billId))
     .reduce((s, p) => s + (Number(p.amount) || 0), 0)
@@ -740,15 +564,18 @@ export const OwnerDashboard = ({ user }) => {
   const revenueByMonth = paidRevenuePayments.reduce((acc, p) => {
     const bill = bills.find(b => b.id === p.billId)
     const m = bill?.month || 'Unknown'
-    acc[m] = (acc[m] || 0) + (Number(p.amount) || 0)
+    acc[m] = (acc[m] || 0) + Number(p.revenueAmount ?? p.amount ?? 0)
     return acc
   }, {})
 
-  const displayName = user.fullName || user.name || 'Owner'
+  const displayName = user.fullName || user.name || 'Landlord'
   const TABS = [
     { id: 'overview', label: 'Overview' },
     { id: 'properties', label: 'Properties' },
-    { id: 'bills', label: 'Bills' },
+    { id: 'applications', label: 'Applications' },
+    { id: 'payments', label: 'Payments' },
+    { id: 'plans', label: 'Plans' },
+    { id: 'bills', label: 'Legacy bills' },
     { id: 'chores', label: 'Chores' },
     { id: 'maintenance', label: 'Maintenance' },
     { id: 'analytics', label: 'Analytics' },
@@ -809,6 +636,9 @@ export const OwnerDashboard = ({ user }) => {
         ))}
       </div>
 
+      {activeTab === 'applications' && <ApplicationsPanel inquiries={inquiries} user={user} landlord />}
+      {activeTab === 'payments' && <div className='space-y-4'><Button onClick={() => setShowPostBill(true)}>Post a charge</Button><PaymentsPanel user={user} landlord /></div>}
+      {activeTab === 'plans' && <SubscriptionPanel user={user} properties={properties} />}
       {/* ── OVERVIEW ── */}
       {activeTab === 'overview' && (
         <div className='space-y-6'>
@@ -862,7 +692,7 @@ export const OwnerDashboard = ({ user }) => {
                           </button>
                           {inq.type === 'rent' && inq.status !== 'approved' && (
                             <button type='button' onClick={() => handleApprove(inq)} className='text-sm text-emerald-600 font-medium hover:text-emerald-800 whitespace-nowrap'>
-                              Approve ✓
+                              Manage application →
                             </button>
                           )}
                         </div>
@@ -900,7 +730,7 @@ export const OwnerDashboard = ({ user }) => {
                       <textarea value={formData.description} onChange={set('description')} rows={3} placeholder='Describe your property...' className='w-full px-4 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none' />
                     </div>
                     <div>
-                      <Label>Monthly Price per Tenant (₱)</Label>
+                      <Label>Whole-room rate (₱)</Label>
                       <Input type='number' min='0' placeholder='5000' value={formData.price} onChange={set('price')} required />
                     </div>
                     <div>
@@ -988,6 +818,7 @@ export const OwnerDashboard = ({ user }) => {
                     <p className='text-xs text-slate-500 mb-2'>Search or click the map to pin the location.</p>
                     <LocationPicker value={formData.location} onChange={(loc) => setFormData(prev => ({ ...prev, location: loc }))} />
                   </div>
+                  <RentalTermsFields value={formData.rentalTerms} onChange={rentalTerms => setFormData(prev => ({ ...prev, rentalTerms }))} price={formData.price} capacity={formData.capacity} />
                   {formError && <p className='text-sm text-red-600 bg-red-50 border border-red-200 p-3 rounded-lg'>{formError}</p>}
                   <Button type='submit' variant='primary' disabled={saving}>{saving ? 'Saving...' : 'Add Property'}</Button>
                 </form>
@@ -1013,7 +844,7 @@ export const OwnerDashboard = ({ user }) => {
                   <div className='p-4 space-y-3'>
                     <div className='flex items-start justify-between gap-2'>
                       <div>
-                        <p className='text-2xl font-bold text-rose-600'>₱{Number(property.price).toLocaleString()}<span className='text-sm font-normal text-slate-500'>/tenant/mo</span></p>
+                        <p className='text-2xl font-bold text-rose-600'>{priceLabel(property)}</p>
                         <p className='font-semibold text-slate-900 mt-0.5'>{property.title}</p>
                       </div>
                       <div className='flex flex-col items-end gap-1 shrink-0'>
@@ -1072,16 +903,7 @@ export const OwnerDashboard = ({ user }) => {
                                     <div className='min-w-0'>
                                       <p className='text-sm font-medium text-slate-900 truncate'>{t.name}</p>
                                       <p className='text-xs text-slate-500 truncate'>{t.email}</p>
-                                      {(() => {
-                                        const phrase = getCurrentActivityPhrase(t.weeklySchedule, t.customActivities)
-                                        if (!phrase) return null
-                                        return (
-                                          <p className='text-xs text-indigo-600 font-medium mt-0.5'>
-                                            <i className='bi bi-circle-fill text-[6px] align-middle mr-1 text-emerald-500' />
-                                            Currently {phrase}
-                                          </p>
-                                        )
-                                      })()}
+
                                     </div>
                                   </div>
                                   <div className='flex gap-1.5 shrink-0'>
@@ -1188,7 +1010,7 @@ export const OwnerDashboard = ({ user }) => {
           <div className='flex items-center justify-between'>
             <div>
               <h2 className='text-lg font-bold text-slate-900' style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}>Bills & Payments</h2>
-              <p className='text-sm text-slate-500'>Rent bills are auto-generated. Post utility/other bills manually.</p>
+              <p className='text-sm text-slate-500'>Previous billing records. Use Payments for new itemized bills and receipts.</p>
             </div>
             <Button variant='primary' onClick={() => setShowPostBill(true)} disabled={properties.length === 0}>
               <i className='bi bi-plus-lg mr-1.5' /> Post Bill
@@ -1210,7 +1032,7 @@ export const OwnerDashboard = ({ user }) => {
           )}
 
           {(() => {
-            const byMonth = bills.slice().sort((a, b) => (a.month > b.month ? -1 : 1)).reduce((acc, b) => {
+            const byMonth = bills.filter(b => b.schemaVersion !== 2).slice().sort((a, b) => (a.month > b.month ? -1 : 1)).reduce((acc, b) => {
               const m = b.month || 'Unknown'; if (!acc[m]) acc[m] = []; acc[m].push(b); return acc
             }, {})
             const months = Object.keys(byMonth).sort((a, b) => b > a ? 1 : -1)
@@ -1448,6 +1270,7 @@ export const OwnerDashboard = ({ user }) => {
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${priCfg.cls}`}>{priCfg.label} Priority</span>
                           </div>
                           <p className='text-xs text-slate-500 mt-0.5'>{req.tenantName} · {req.propertyTitle}</p>
+                          <p className='text-xs text-slate-500'>Requested: {formatDate(req.createdAt)} · Started: {formatDate(req.startedAt)} · Resolved: {formatDate(req.resolvedAt)}</p><button className='text-xs text-indigo-600 font-semibold' onClick={() => setMaintenanceCharge(req)}>Create maintenance charge</button>
                           {req.description && <p className='text-sm text-slate-600 mt-1.5 leading-relaxed'>{req.description}</p>}
                         </div>
                         <div className='flex flex-col gap-1.5 shrink-0'>
@@ -1473,7 +1296,8 @@ export const OwnerDashboard = ({ user }) => {
       )}
 
       {/* ── ANALYTICS ── */}
-      {activeTab === 'analytics' && (
+      {activeTab === 'analytics' && premium && <Button onClick={() => exportReport(bills, payments)}>Export payment report</Button>}
+      {activeTab === 'analytics' && premium && (
         <div className='space-y-6'>
           <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
             {[
@@ -1545,6 +1369,7 @@ export const OwnerDashboard = ({ user }) => {
       )}
 
       {/* ── PROFILE ── */}
+      {activeTab === 'analytics' && !premium && <div className='p-6 bg-white border rounded-xl'><p>Revenue analytics are included in paid landlord plans.</p><Button onClick={() => setActiveTab('plans')}>View plans</Button></div>}
       {activeTab === 'profile' && (
         <div className='max-w-xl space-y-6'>
           <Card>
@@ -1670,6 +1495,7 @@ export const OwnerDashboard = ({ user }) => {
       {/* ── Modals ── */}
       {editingProperty && <EditPropertyModal property={editingProperty} onClose={() => setEditingProperty(null)} />}
       {viewingTenant && <TenantDetailModal tenantUid={viewingTenant.uid} tenantName={viewingTenant.name} onClose={() => setViewingTenant(null)} />}
+      {maintenanceCharge && <PostBillModal properties={properties} landlordUid={user.uid} maintenanceRequest={maintenanceCharge} onClose={() => setMaintenanceCharge(null)} />}
       {showPostBill && <PostBillModal properties={properties} landlordUid={user.uid} onClose={() => setShowPostBill(false)} />}
       {showCreateChore && <ChoreModal properties={properties} landlordUid={user.uid} onClose={() => setShowCreateChore(false)} />}
 

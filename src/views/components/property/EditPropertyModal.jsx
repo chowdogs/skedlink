@@ -1,6 +1,7 @@
+import { RentalTermsFields } from './RentalTermsFields'
+import { termsFor } from '../../../lib/rentalTerms'
+import { platform } from '../../../lib/platform'
 import React, { useState } from 'react'
-import { doc, updateDoc } from 'firebase/firestore'
-import { db } from '../../../firebase'
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/Card'
 import { Input, Label } from '../../ui/Input'
 import { Button } from '../../ui/Button'
@@ -20,7 +21,8 @@ export const EditPropertyModal = ({ property, onClose }) => {
   const [form, setForm] = useState({
     title: property.title || '',
     description: property.description || '',
-    price: property.price || '',
+    price: property.rentalTerms ? property.price : Number(property.price) * Math.max(1, Number(property.capacity)),
+    rentalTerms: termsFor(property),
     capacity: property.capacity || '',
     propertyType: property.propertyType || '',
     amenities: property.amenities || [],
@@ -52,7 +54,8 @@ export const EditPropertyModal = ({ property, onClose }) => {
     if (!form.location) { setError('Please pin the property location on the map.'); return }
     setSaving(true)
     try {
-      await updateDoc(doc(db, 'properties', property.id), {
+      await platform('saveProperty', { id: property.id, property: {
+        rentalTerms: form.rentalTerms,
         title: form.title,
         description: form.description,
         price: Number(form.price),
@@ -69,7 +72,7 @@ export const EditPropertyModal = ({ property, onClose }) => {
         permits: form.permits || {},
         houseRules: form.houseRules,
         emergencyContacts: form.emergencyContacts
-      })
+      } })
       onClose()
     } catch (err) {
       setError('Save failed: ' + err.message)
@@ -115,7 +118,7 @@ export const EditPropertyModal = ({ property, onClose }) => {
                 </div>
 
                 <div>
-                  <Label htmlFor='price'>Monthly Price (₱)</Label>
+                  <Label htmlFor='price'>Whole-room rate (₱)</Label>
                   <Input id='price' type='number' min='0' value={form.price} onChange={set('price')} required />
                 </div>
 
@@ -177,6 +180,7 @@ export const EditPropertyModal = ({ property, onClose }) => {
                 </div>
               </div>
 
+              <RentalTermsFields value={form.rentalTerms} onChange={rentalTerms => setForm(prev => ({ ...prev, rentalTerms }))} price={form.price} capacity={form.capacity} />
               {/* House Rules */}
               <div className='md:col-span-2'>
                 <Label>House Rules</Label>

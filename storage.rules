@@ -1,0 +1,15 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /contracts/{inquiryId}/{uploader}/{file} {
+      function participant() {
+        let inquiry = firestore.get(/databases/(default)/documents/inquiries/$(inquiryId)).data;
+        return request.auth != null && (request.auth.uid == inquiry.tenantUid || request.auth.uid == inquiry.landlordUid);
+      }
+      allow read: if participant();
+      allow create: if resource == null && participant() && request.auth.uid == uploader && request.resource.size < 5 * 1024 * 1024 && request.resource.contentType == 'application/pdf';
+      // Signed documents are immutable; revisions are separate uploaded files.
+    }
+    match /{allPaths=**} { allow read, write: if false; }
+  }
+}

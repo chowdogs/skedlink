@@ -1,5 +1,9 @@
+import { ApplicationsPanel } from '../components/property/ApplicationsPanel'
+import { PaymentsPanel } from '../components/billing/PaymentsPanel'
+import { priceLabel, formatDate, rentalRate } from '../../lib/rentalTerms'
+import { platform } from '../../lib/platform'
 import React, { useState, useEffect } from 'react'
-import { collection, query, where, onSnapshot, deleteDoc, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../firebase'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -17,7 +21,7 @@ import { useCompatibility } from '../../controllers/useCompatibility'
 import { useAuth } from '../../contexts/AuthContext'
 import { compressToBase64 } from '../../lib/compressToBase64'
 import { notify } from '../../lib/notify'
-import { getCurrentActivityPhrase } from '../../lib/scheduleUtils'
+
 
 const PhotoGrid = ({ photos, onPhotoClick }) => {
   if (!photos || photos.length === 0) {
@@ -189,7 +193,7 @@ const AmenitiesDisplay = ({ amenities }) => {
 export const SeekerDashboard = ({ user }) => {
   const { updateUserProfile, changePassword, logout } = useAuth()
   const { openConversation } = useMessages()
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState(() => new URLSearchParams(window.location.search).has('checkout') ? 'payments' : 'overview')
   const [saveMsg, setSaveMsg] = useState('')
   const [locationFilter, setLocationFilter] = useState('')
   const [contactProperty, setContactProperty] = useState(null)
@@ -222,8 +226,7 @@ export const SeekerDashboard = ({ user }) => {
   const [showFilters, setShowFilters] = useState(false)
 
   const schedulePainter = useSchedulePainter(user.uid)
-  const liveProfile = { ...user, weeklySchedule: schedulePainter.schedule }
-  const compatibility = useCompatibility(liveProfile)
+  const compatibility = useCompatibility(user)
 
   const scheduleComplete = schedulePainter.loaded &&
     Object.values(schedulePainter.schedule || {}).some(day =>
@@ -250,9 +253,9 @@ export const SeekerDashboard = ({ user }) => {
 
   useEffect(() => {
     if (!approvedInquiry?.propertyId) { setMyBills([]); return }
-    const q = query(collection(db, 'bills'), where('propertyId', '==', approvedInquiry.propertyId))
+    const q = query(collection(db, 'bills'), where('tenantUid', '==', user.uid))
     return onSnapshot(q, snap => setMyBills(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-  }, [approvedInquiry?.propertyId])
+  }, [approvedInquiry?.propertyId, user.uid])
 
   useEffect(() => {
     const q = query(collection(db, 'payments'), where('tenantUid', '==', user.uid))
@@ -290,7 +293,7 @@ export const SeekerDashboard = ({ user }) => {
       variant: 'danger',
       icon: 'bi-send-x-fill',
       confirmLabel: 'Cancel Inquiry',
-      onConfirm: async () => { await deleteDoc(doc(db, 'inquiries', inqId)) },
+      onConfirm: async () => { await platform('cancelApplication', { id: inqId }) },
     })
   }
 
@@ -407,12 +410,6 @@ export const SeekerDashboard = ({ user }) => {
   const handleSaveSchedule = async () => {
     try {
       await schedulePainter.saveSchedule()
-      if (approvedInquiry?.propertyId) {
-        await updateDoc(doc(db, 'properties', approvedInquiry.propertyId), {
-          [`tenantDetails.${user.uid}.weeklySchedule`]: schedulePainter.schedule,
-          [`tenantDetails.${user.uid}.customActivities`]: schedulePainter.customActivities,
-        })
-      }
       setSaveMsg('Schedule saved!')
       setTimeout(() => setSaveMsg(''), 3000)
     } catch {
@@ -429,11 +426,7 @@ export const SeekerDashboard = ({ user }) => {
       const b64 = await compressToBase64(file, { maxPx: 400, quality: 0.8 })
       setProfilePhoto(b64)
       await updateUserProfile({ profilePhoto: b64 })
-      if (approvedInquiry?.propertyId) {
-        await updateDoc(doc(db, 'properties', approvedInquiry.propertyId), {
-          [`tenantDetails.${user.uid}.profilePhoto`]: b64
-        })
-      }
+
     } catch (err) {
       setProfileMsg('Photo upload failed: ' + err.message)
     } finally {
@@ -471,14 +464,7 @@ export const SeekerDashboard = ({ user }) => {
         phone: profilePhone
       })
       const propagations = []
-      if (approvedInquiry?.propertyId) {
-        propagations.push(
-          updateDoc(doc(db, 'properties', approvedInquiry.propertyId), {
-            [`tenantDetails.${user.uid}.name`]: profileName,
-            [`tenantDetails.${user.uid}.phone`]: profilePhone
-          })
-        )
-      }
+
       for (const inq of myInquiries) {
         propagations.push(updateDoc(doc(db, 'inquiries', inq.id), { tenantName: profileName }))
       }
@@ -510,6 +496,8 @@ export const SeekerDashboard = ({ user }) => {
     { id: 'overview', label: 'Overview' },
     { id: 'schedule', label: 'My Schedule' },
     { id: 'matching', label: 'Property Matches' },
+    { id: 'applications', label: 'Applications' },
+    { id: 'payments', label: 'Payments' },
     { id: 'myhome', label: 'My Home' },
     { id: 'profile', label: 'My Profile' }
   ]
@@ -517,8 +505,8 @@ export const SeekerDashboard = ({ user }) => {
   const filteredProperties = compatibility.results.filter(p => {
     if (locationFilter && !(p.location?.address || '').toLowerCase().includes(locationFilter.toLowerCase())) return false
     if (filterType && p.propertyType !== filterType) return false
-    if (filterPriceMin && Number(p.price) < Number(filterPriceMin)) return false
-    if (filterPriceMax && Number(p.price) > Number(filterPriceMax)) return false
+    if (filterPriceMin && rentalRate(p, p.rentalTerms?.occupancy === 'exclusive' ? 'exclusive' : 'shared') < Number(filterPriceMin)) return false
+    if (filterPriceMax && rentalRate(p, p.rentalTerms?.occupancy === 'exclusive' ? 'exclusive' : 'shared') > Number(filterPriceMax)) return false
     if (filterGender && filterGender !== 'none' && p.rules?.genderRestriction !== filterGender) return false
     if (filterAmenities.length > 0 && !filterAmenities.every(a => (p.amenities || []).includes(a))) return false
     return true
@@ -674,6 +662,7 @@ export const SeekerDashboard = ({ user }) => {
       )}
 
       {/* ── MATCHING ── */}
+      {activeTab === 'matching' && compatibility.error && <p className='p-3 bg-amber-50 text-sm rounded-xl mb-3'>Listings are available. Compatibility scores are temporarily unavailable.</p>}
       {activeTab === 'matching' && (
         <div className='space-y-6'>
           {/* Schedule gate banner */}
@@ -795,8 +784,8 @@ export const SeekerDashboard = ({ user }) => {
                   ) : (
                     <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
                       {filteredProperties.map(property => {
-                        const existingInquiry = myInquiries.find(i => i.propertyId === property.id)
-                        const isFull = (property.tenants?.length || 0) >= (Number(property.capacity) || 1)
+                        const existingInquiry = myInquiries.find(i => i.propertyId === property.id && !['closed', 'cancelled', 'rejected', 'expired'].includes(i.status))
+                        const isFull = !property.rentalTerms && (property.tenants?.length || 0) >= (Number(property.capacity) || 1)
                         return (
                           <div key={property.id} className='bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-shadow'>
                             <div className='relative'>
@@ -812,7 +801,7 @@ export const SeekerDashboard = ({ user }) => {
                               <div className='flex items-start justify-between gap-2'>
                                 <div>
                                   <p className='text-xl font-bold text-rose-600'>
-                                    ₱{Number(property.price).toLocaleString()}<span className='text-sm font-normal text-slate-500'>/mo</span>
+                                    {priceLabel(property)}
                                   </p>
                                   <div className='flex items-center gap-1.5 mt-0.5 flex-wrap'>
                                     <p className='font-semibold text-slate-900'>{property.title}</p>
@@ -830,7 +819,7 @@ export const SeekerDashboard = ({ user }) => {
                                     property.score >= 40 ? 'bg-amber-100 text-amber-700' :
                                     'bg-red-100 text-red-700'
                                   }`}>
-                                    {property.score}% Match
+                                    {property.rentalTerms?.occupancy === 'exclusive' ? 'Private room' : property.score == null ? 'No score yet' : `${property.score}% Match`}
                                   </div>
                                 </div>
                               </div>
@@ -924,6 +913,8 @@ export const SeekerDashboard = ({ user }) => {
         </div>
       )}
 
+      {activeTab === 'applications' && <ApplicationsPanel inquiries={myInquiries} user={user} />}
+      {activeTab === 'payments' && <PaymentsPanel user={user} />}
       {/* ── MY HOME ── */}
       {activeTab === 'myhome' && (
         <div className='space-y-6'>
@@ -933,7 +924,7 @@ export const SeekerDashboard = ({ user }) => {
                 <i className='bi bi-house-door text-slate-400 text-4xl' />
               </div>
               <p className='text-xl font-semibold text-slate-700'>No approved rental yet</p>
-              <p className='text-slate-500 mt-2 text-sm'>Once a landlord approves your rent inquiry, your home details will appear here.</p>
+              <p className='text-slate-500 mt-2 text-sm'>Your home appears after your signed contract is accepted and payment is confirmed.</p>
               <Button variant='primary' className='mt-6' onClick={() => setActiveTab('matching')}>
                 Browse Properties
               </Button>
@@ -949,7 +940,7 @@ export const SeekerDashboard = ({ user }) => {
                   <div className='flex items-start justify-between gap-2'>
                     <div>
                       <p className='text-2xl font-bold text-rose-600'>
-                        ₱{Number(homeProperty.price).toLocaleString()}<span className='text-sm font-normal text-slate-500'>/mo</span>
+                        {approvedInquiry.selection ? `₱${approvedInquiry.selection.rate.toLocaleString()} / ${approvedInquiry.selection.period}` : priceLabel(homeProperty)}
                       </p>
                       <p className='text-lg font-semibold text-slate-900 mt-0.5'>{homeProperty.title}</p>
                     </div>
@@ -1131,7 +1122,7 @@ export const SeekerDashboard = ({ user }) => {
                 </CardHeader>
                 <CardContent>
                   {(() => {
-                    const visibleBills = myBills.filter(b => b.type !== 'rent' || b.tenantUid === user.uid)
+                    const visibleBills = myBills.filter(b => b.schemaVersion !== 2 && (b.type !== 'rent' || b.tenantUid === user.uid))
                     if (visibleBills.length === 0) return <p className='text-sm text-slate-500'>No bills posted yet for this property.</p>
                     const byMonth = visibleBills.reduce((acc, b) => {
                       const m = b.month || 'Unknown'
@@ -1309,17 +1300,8 @@ export const SeekerDashboard = ({ user }) => {
                                 </div>
                                 <div className='min-w-0'>
                                   <p className='font-medium text-slate-900 truncate'>{name}</p>
-                                  {t?.email && <p className='text-xs text-slate-500 truncate'>{t.email}</p>}
-                                  {(() => {
-                                    const phrase = getCurrentActivityPhrase(t?.weeklySchedule, t?.customActivities)
-                                    if (!phrase) return null
-                                    return (
-                                      <p className='text-xs text-indigo-600 font-medium mt-0.5'>
-                                        <i className='bi bi-circle-fill text-[6px] align-middle mr-1 text-emerald-500' />
-                                        Currently {phrase}
-                                      </p>
-                                    )
-                                  })()}
+
+
                                 </div>
                               </div>
                               <div className='flex gap-2 shrink-0'>
@@ -1328,7 +1310,7 @@ export const SeekerDashboard = ({ user }) => {
                                   onClick={() => setViewingTenant({ uid, name })}
                                   className='text-xs text-indigo-600 font-semibold hover:text-indigo-800 px-2.5 py-1.5 bg-white rounded-lg border border-indigo-200 hover:border-indigo-400 transition-colors whitespace-nowrap'
                                 >
-                                  View Schedule
+                                  Housemate
                                 </button>
                                 <button
                                   type='button'
@@ -1413,7 +1395,8 @@ export const SeekerDashboard = ({ user }) => {
                                   <p className={`font-semibold text-sm ${req.status === 'resolved' ? 'line-through text-slate-400' : 'text-slate-900'}`}>{req.title}</p>
                                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${priCfg.cls}`}>{priCfg.label}</span>
                                 </div>
-                                {req.description && <p className='text-xs text-slate-500 mt-0.5 leading-relaxed'>{req.description}</p>}
+                                <p className='text-xs text-slate-500'>Requested: {formatDate(req.createdAt)} · Started: {formatDate(req.startedAt)} · Resolved: {formatDate(req.resolvedAt)}</p>
+                              {req.description && <p className='text-xs text-slate-500 mt-0.5 leading-relaxed'>{req.description}</p>}
                               </div>
                               <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${statCfg.cls}`}>{statCfg.label}</span>
                             </div>

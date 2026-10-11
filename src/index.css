@@ -5,6 +5,14 @@
 @tailwind components;
 @tailwind utilities;
 
+@media print {
+  body * { visibility: hidden; }
+  .payment-statement, .payment-statement * { visibility: visible; }
+  .payment-statement { position: absolute; inset: 0; padding: 16px; background: white; }
+  .payment-statement button, .payment-statement input, .payment-statement select { display: none; }
+  .payment-statement article { break-inside: avoid; }
+}
+
 * {
   margin: 0;
   padding: 0;

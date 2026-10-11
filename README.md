@@ -1,4 +1,8 @@
-# Getting Started with Create React App
+# SkedLink
+
+See [Finals revision setup and walkthrough](docs/FINALS-REVISION.md) for the updated rental, contracts, billing, privacy, subscription, and PayMongo test-mode flows. New workflows require the Firebase backend and rules; the setup guide lists the deployment and migration steps.
+
+## Development commands
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 

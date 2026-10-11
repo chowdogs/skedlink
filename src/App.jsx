@@ -9,31 +9,30 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { MessagesProvider } from './contexts/MessagesContext'
 
 function AppRoutes() {
-  const { logout } = useAuth()
+  const { logout, userProfile } = useAuth()
   const [page, setPage] = useState('landing')
-  const [currentUser, setCurrentUser] = useState(null)
+  const currentUser = userProfile
+  const effectivePage = currentUser ? (currentUser.role === 'seeker' ? 'seeker-dashboard' : 'owner-dashboard') : page
 
   const handleLogin = (profile) => {
-    setCurrentUser(profile)
     setPage(profile.role === 'seeker' ? 'seeker-dashboard' : 'owner-dashboard')
   }
 
   const handleLogout = async () => {
     await logout()
-    setCurrentUser(null)
     setPage('landing')
   }
 
   return (
     <>
-      {page === 'landing' && (
+      {effectivePage === 'landing' && (
         <Landing
           onGetStarted={() => setPage('register')}
           onLogin={() => setPage('login')}
         />
       )}
 
-      {page === 'login' && (
+      {effectivePage === 'login' && (
         <Login
           onLogin={handleLogin}
           onGoToRegister={() => setPage('register')}
@@ -41,7 +40,7 @@ function AppRoutes() {
         />
       )}
 
-      {page === 'register' && (
+      {effectivePage === 'register' && (
         <Register
           onRegister={handleLogin}
           onGoToLogin={() => setPage('login')}
@@ -49,13 +48,13 @@ function AppRoutes() {
         />
       )}
 
-      {page === 'seeker-dashboard' && currentUser && (
+      {effectivePage === 'seeker-dashboard' && currentUser && (
         <MainLayout onLogout={handleLogout} currentUser={currentUser}>
           <SeekerDashboard user={currentUser} />
         </MainLayout>
       )}
 
-      {page === 'owner-dashboard' && currentUser && (
+      {effectivePage === 'owner-dashboard' && currentUser && (
         <MainLayout onLogout={handleLogout} currentUser={currentUser}>
           <OwnerDashboard user={currentUser} />
         </MainLayout>

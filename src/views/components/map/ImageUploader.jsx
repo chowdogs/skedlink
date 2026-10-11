@@ -67,7 +67,7 @@ export const ImageUploader = ({ value = [], onChange }) => {
         <div className='grid grid-cols-3 gap-2'>
           {value.map((src, i) => (
             <div key={i} className='relative group rounded-lg overflow-hidden border border-slate-200 aspect-video'>
-              <img src={src} alt={`Photo ${i + 1}`} className='w-full h-full object-cover' />
+              <img src={src} alt={`Room view ${i + 1}`} className='w-full h-full object-cover' />
               <button
                 type='button'
                 onClick={() => removePhoto(i)}

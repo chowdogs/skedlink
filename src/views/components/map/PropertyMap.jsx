@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { priceLabel } from '../../../lib/rentalTerms'
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -166,10 +167,10 @@ export const PropertyMap = ({ properties }) => {
                       )}
                       <p className='font-bold text-slate-900 mb-1'>{property.title}</p>
                       <p className='text-slate-500 text-xs mb-1'>{property.location.address}</p>
-                      <p className='text-slate-700'>₱{Number(property.price).toLocaleString()}/mo</p>
+                      <p className='text-slate-700'>{priceLabel(property)}</p>
                       <p className='text-slate-700'>{property.tenants?.length || 0}/{property.capacity} tenants</p>
                       <p className='font-bold mt-1' style={{ color: property.score >= 60 ? '#10b981' : '#f59e0b' }}>
-                        {property.score}% match
+                        {property.rentalTerms?.occupancy === 'exclusive' ? 'Private room' : property.score == null ? 'No score yet' : `${property.score}% match`}
                       </p>
                     </div>
                   </Popup>

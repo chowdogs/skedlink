@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { collection, onSnapshot, orderBy, query, limit, updateDoc, doc, writeBatch, getDocs, where } from 'firebase/firestore'
+import { collection, onSnapshot, orderBy, query, limit, updateDoc, doc, writeBatch, where } from 'firebase/firestore'
 import { db } from '../../firebase'
 import { useMessages } from '../../contexts/MessagesContext'
 import { MessagesPanel } from '../components/messages/MessagesPanel'

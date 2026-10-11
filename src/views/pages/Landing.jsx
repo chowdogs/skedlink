@@ -17,13 +17,13 @@ const TENANT_FEATURES = [
     icon: 'bi-funnel-fill',
     grad: 'from-cyan-500 to-teal-500',
     title: 'Smart Property Filters',
-    desc: 'Filter by property type, monthly price range, gender restriction, and must-have amenities. See properties on an interactive map with real photos and permit status.'
+    desc: 'Compare shared beds and private rooms with nightly, weekly, or monthly rates, minimum stays, utility policies, and amenities.'
   },
   {
     icon: 'bi-receipt',
     grad: 'from-emerald-500 to-teal-500',
-    title: 'Bills & GCash Payments',
-    desc: 'View your monthly rent and utility bills in one place. Submit GCash payment proofs directly — landlords review and confirm right inside the app.'
+    title: 'Itemized Bills & Payments',
+    desc: 'See rent, utilities, and maintenance separately. Pay through checkout, download payment records, and request to apply your reusable advance rent.'
   },
   {
     icon: 'bi-check2-circle',
@@ -62,7 +62,7 @@ const LANDLORD_FEATURES = [
     icon: 'bi-cash-coin',
     grad: 'from-amber-500 to-yellow-500',
     title: 'Billing & Revenue',
-    desc: 'Monthly rent bills are generated automatically for each approved tenant. Post custom utility bills, review GCash payment receipts, and track revenue with a built-in analytics dashboard.'
+    desc: 'Generate itemized rent and utility bills, explain maintenance charges, and track confirmed payments. Paid plans include revenue analytics and report export.'
   },
   {
     icon: 'bi-list-check',
@@ -91,13 +91,13 @@ const STEPS = [
     icon: 'bi-search-heart',
     title: 'Find the Right Fit',
     tenant: 'Browse properties with live compatibility scores, filter by price and amenities, and view them on a map.',
-    landlord: 'Review incoming inquiries, read tenant profiles and schedules, then approve the right people for your space.'
+    landlord: 'Review applications and agreed rental terms, then exchange a private contract with the seeker.'
   },
   {
     n: '03',
     icon: 'bi-chat-dots-fill',
     title: 'Connect & Move In',
-    tenant: 'Send a rent inquiry, chat with the landlord, get approved, and join your home\'s group chat instantly.',
+    tenant: 'Apply, return your signed contract, and complete your move-in payment before joining your household.',
     landlord: 'Approve a tenant and the system automatically sets up their first rent bill and group chat access.'
   },
   {
@@ -125,8 +125,8 @@ const SHARED_FEATURES = [
   {
     icon: 'bi-person-lines-fill',
     grad: 'from-emerald-500 to-teal-500',
-    title: 'Live Activity Status',
-    desc: 'Housemates list shows what everyone is doing right now — "Currently sleeping," "Currently at school," or "Currently doing Gym Time" — based on their saved schedule.'
+    title: 'Private Household Profiles',
+    desc: 'Connect through household messaging. Your contact details, identity documents, weekly schedule, and current activity stay private.'
   },
 ]
 
@@ -271,10 +271,10 @@ export const Landing = ({ onGetStarted, onLogin }) => {
                     'Browse properties with live match percentages, photos & map',
                     'Filter by type, price, gender restriction & amenities',
                     'Send inquiries and chat with landlords directly',
-                    'Pay bills via GCash proof-of-payment upload',
+                    'Pay itemized bills and view confirmed receipts',
                     'Track chores, report maintenance issues, stay updated',
                     'Chat with housemates — privately or in the group',
-                    'See what housemates are doing right now, based on their schedule',
+                    'Keep your schedule and personal details private',
                   ].map(item => (
                     <li key={item} className='flex items-start gap-2.5 text-sm text-slate-700'>
                       <i className='bi bi-check-circle-fill text-indigo-500 text-sm shrink-0 mt-0.5' />
@@ -302,9 +302,9 @@ export const Landing = ({ onGetStarted, onLogin }) => {
                   {[
                     'List properties with photos, map pin, permits & house rules',
                     'Earn a Verified Landlord badge with ID + ownership proof',
-                    'Review tenant profiles and their weekly schedules before approving',
+                    'Exchange signed contracts before requesting move-in payment',
                     'Auto-generated monthly rent bills per tenant',
-                    'Post utility bills and review GCash payment receipts',
+                    'Post itemized charges and manage reusable advance balances',
                     'Assign and verify chores — auto-assign for fairness',
                     'Track maintenance requests by priority and status',
                     'Post announcements and manage move-out requests',

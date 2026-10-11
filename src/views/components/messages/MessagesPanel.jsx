@@ -2,13 +2,12 @@ import React, { useState, useEffect, useRef } from 'react'
 import {
   collection, query, where, onSnapshot, orderBy,
   addDoc, updateDoc, doc, serverTimestamp,
-  arrayUnion, setDoc, getDoc
+  setDoc
 } from 'firebase/firestore'
 import { db } from '../../../firebase'
 import { useMessages } from '../../../contexts/MessagesContext'
 import { ConfirmModal } from '../../ui/ConfirmModal'
 import { Badge } from '../../ui/Badge'
-import { notify } from '../../../lib/notify'
 
 const fmtTime = (ts) => {
   if (!ts?.toDate) return ''
@@ -27,6 +26,7 @@ const Avatar = ({ photo, name }) => (
 // ── INQUIRY CHAT VIEW ─────────────────────────────────────────────────────────
 
 const InquiryChatView = ({ inquiry, currentUser, setDialog }) => {
+  const { closePanel } = useMessages()
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
@@ -77,57 +77,7 @@ const InquiryChatView = ({ inquiry, currentUser, setDialog }) => {
     }
   }
 
-  const handleApprove = () => {
-    setDialog({
-      title: 'Approve Tenant',
-      message: `Approve ${inquiry.tenantName} for "${inquiry.propertyTitle}"? A rent bill and group chat will be set up automatically.`,
-      variant: 'primary',
-      icon: 'bi-patch-check-fill',
-      confirmLabel: 'Approve',
-      onConfirm: async () => {
-        let tenantPhoto = ''
-        try {
-          const snap = await getDoc(doc(db, 'users', inquiry.tenantUid))
-          if (snap.exists()) tenantPhoto = snap.data().profilePhoto || ''
-        } catch {}
-
-        const approvedDay = new Date().getDate()
-        await updateDoc(doc(db, 'properties', inquiry.propertyId), {
-          tenants: arrayUnion(inquiry.tenantUid),
-          [`tenantDetails.${inquiry.tenantUid}`]: {
-            name: inquiry.tenantName,
-            email: inquiry.tenantEmail,
-            phone: inquiry.tenantPhone || '',
-            profilePhoto: tenantPhoto,
-            approvedDay,
-          }
-        })
-        await updateDoc(doc(db, 'inquiries', inquiry.id), { status: 'approved', unreadByTenant: true })
-        await setDoc(doc(db, 'propertyChats', inquiry.propertyId), {
-          participantUids: arrayUnion(inquiry.tenantUid, inquiry.landlordUid),
-          participantNames: {
-            [inquiry.tenantUid]: inquiry.tenantName,
-            [inquiry.landlordUid]: currentUser.fullName || currentUser.name || 'Landlord'
-          },
-          propertyTitle: inquiry.propertyTitle
-        }, { merge: true })
-        await addDoc(collection(db, 'inquiries', inquiry.id, 'messages'), {
-          senderId: currentUser.uid,
-          senderName: currentUser.fullName || currentUser.name || 'Landlord',
-          senderPhoto: currentUser.profilePhoto || '',
-          text: `Your application to rent ${inquiry.propertyTitle} has been approved! Welcome aboard.`,
-          createdAt: serverTimestamp(),
-          isSystem: true
-        })
-        await notify(inquiry.tenantUid, {
-          type: 'approval',
-          title: 'Rental Application Approved!',
-          body: `Your application for "${inquiry.propertyTitle}" has been approved. Welcome home!`,
-          tab: 'myhome',
-        })
-      },
-    })
-  }
+  const handleApprove = () => { closePanel(); window.dispatchEvent(new CustomEvent('skedlink:navigate', { detail: { tab: 'applications' } })) }
 
   const STATUS_VARIANT = { pending: 'warning', active: 'primary', approved: 'success', closed: 'danger' }
   const canApprove = isOwner && inquiry.type === 'rent' && inquiry.status !== 'approved'
@@ -436,7 +386,7 @@ export const MessagesPanel = ({ currentUser }) => {
         return updated ? { ...prev, inquiry: updated } : prev
       })
     })
-  }, [uid, role])
+  }, [uid, role, setActiveConversation])
 
   useEffect(() => {
     if (!uid) return

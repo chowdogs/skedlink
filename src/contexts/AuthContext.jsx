@@ -8,7 +8,7 @@ import {
   reauthenticateWithCredential,
   EmailAuthProvider
 } from 'firebase/auth'
-import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore'
+import { doc, setDoc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 
 const AuthContext = createContext(null)
@@ -32,6 +32,7 @@ export const AuthProvider = ({ children }) => {
       customActivities: []
     }
     await setDoc(doc(db, 'users', user.uid), profile)
+    setUserProfile(profile)
     return profile
   }
 
@@ -39,6 +40,7 @@ export const AuthProvider = ({ children }) => {
     const { user } = await signInWithEmailAndPassword(auth, email, password)
     const snap = await getDoc(doc(db, 'users', user.uid))
     if (!snap.exists()) throw new Error('User profile not found. Please register first.')
+    setUserProfile(snap.data())
     return snap.data()
   }
 
@@ -58,17 +60,21 @@ export const AuthProvider = ({ children }) => {
   }
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
+    let profileUnsub = () => {}
+    const unsub = onAuthStateChanged(auth, (user) => {
+      profileUnsub()
       setCurrentUser(user)
       if (user) {
-        const snap = await getDoc(doc(db, 'users', user.uid))
-        setUserProfile(snap.exists() ? snap.data() : null)
+        profileUnsub = onSnapshot(doc(db, 'users', user.uid), snap => {
+          setUserProfile(snap.exists() ? snap.data() : null)
+          setLoading(false)
+        }, () => { setUserProfile(null); setLoading(false) })
       } else {
         setUserProfile(null)
+        setLoading(false)
       }
-      setLoading(false)
     })
-    return unsub
+    return () => { unsub(); profileUnsub() }
   }, [])
 
   return (

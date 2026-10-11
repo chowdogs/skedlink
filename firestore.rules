@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signed() { return request.auth != null; }
+    function self(uid) { return signed() && request.auth.uid == uid; }
+    function party(d) { return signed() && (d.tenantUid == request.auth.uid || d.landlordUid == request.auth.uid); }
+    function owns(id) { return signed() && get(/databases/$(database)/documents/properties/$(id)).data.ownerId == request.auth.uid; }
+    function resident(id) { return signed() && request.auth.uid in get(/databases/$(database)/documents/properties/$(id)).data.tenants; }
+    function household(id) { return owns(id) || resident(id); }
+    function changedOnly(fields) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields); }
+    match /users/{uid} {
+      allow read: if self(uid);
+      allow create: if self(uid) && request.resource.data.uid == uid && request.resource.data.role in ['owner','seeker'] && request.resource.data.keys().hasOnly(['uid','email','fullName','role','phone','weeklySchedule','customActivities']);
+      allow update: if self(uid) && changedOnly(['fullName','phone','weeklySchedule','customActivities','profilePhoto','gender','age','occupation','bio','validIdUrl','verificationDocs','isVerified']);
+    }
+    // All listing writes go through server validation. Only safe household summaries are stored here.
+    match /properties/{id} {
+      allow read: if signed();
+      allow update: if (owns(id) && changedOnly(['houseRules','emergencyContacts','landlordContact','landlordVerified'])) || (resident(id) && changedOnly(['houseRules','emergencyContacts']));
+    }
+    match /inquiries/{id} {
+      allow read: if party(resource.data);
+      allow update: if party(resource.data) && changedOnly(['unreadByOwner','unreadByTenant','lastMessage','lastMessageAt','tenantName','status']) && (request.resource.data.status == resource.data.status || (resource.data.status == 'pending' && request.resource.data.status == 'active'));
+      match /messages/{message} {
+        function member() { return party(get(/databases/$(database)/documents/inquiries/$(id)).data); }
+        allow read: if member();
+        allow create: if member() && request.resource.data.senderId == request.auth.uid && request.resource.data.text is string && request.resource.data.text.size() <= 10000;
+      }
+    }
+    match /bills/{id} {
+      allow read: if party(resource.data);
+      allow update: if self(resource.data.landlordUid) && !('schemaVersion' in resource.data) && changedOnly(['isRevenue','overdueNotifiedAt']);
+    }
+    match /payments/{id} {
+      allow read: if party(resource.data);
+      allow create: if self(request.resource.data.tenantUid) && request.resource.data.status == 'under_review' && !('schemaVersion' in get(/databases/$(database)/documents/bills/$(request.resource.data.billId)).data) && get(/databases/$(database)/documents/bills/$(request.resource.data.billId)).data.tenantUid == request.auth.uid && request.resource.data.landlordUid == get(/databases/$(database)/documents/bills/$(request.resource.data.billId)).data.landlordUid;
+      allow update: if !('method' in resource.data) && ((self(resource.data.landlordUid) && changedOnly(['status','reviewedAt','rejectionReason']) && request.resource.data.status in ['paid','rejected']) || (self(resource.data.tenantUid) && resource.data.status == 'rejected' && changedOnly(['referenceNo','receiptImageBase64','status','amount','submittedAt']) && request.resource.data.status == 'under_review'));
+    }
+    match /tenantAccounts/{id} { allow read: if party(resource.data); }
+    match /advanceRequests/{id} { allow read: if party(resource.data); }
+    match /subscriptions/{uid} { allow read: if self(resource.data.landlordUid); }
+    match /customPlanRequests/{uid} { allow read: if self(resource.data.landlordUid); }
+    match /checkoutOrders/{id} { allow read: if self(resource.data.uid); }
+    match /maintenanceRequests/{id} {
+      allow read: if party(resource.data);
+      allow create: if self(request.resource.data.tenantUid) && resident(request.resource.data.propertyId) && request.resource.data.landlordUid == get(/databases/$(database)/documents/properties/$(request.resource.data.propertyId)).data.ownerId && request.resource.data.status == 'open' && request.resource.data.createdAt == request.time;
+    }
+    match /moveoutRequests/{id} {
+      allow read: if party(resource.data);
+      allow create: if self(request.resource.data.tenantUid) && resident(request.resource.data.propertyId) && request.resource.data.landlordUid == get(/databases/$(database)/documents/properties/$(request.resource.data.propertyId)).data.ownerId && request.resource.data.status == 'pending';
+      allow update: if self(resource.data.tenantUid) && changedOnly(['status']) && request.resource.data.status == 'cancelled' && resource.data.status == 'pending';
+    }
+    match /chores/{id} {
+      allow read: if self(resource.data.landlordUid) || self(resource.data.assignedTo);
+      allow create: if owns(request.resource.data.propertyId) && self(request.resource.data.landlordUid) && request.resource.data.assignedTo in get(/databases/$(database)/documents/properties/$(request.resource.data.propertyId)).data.tenants;
+      allow update: if (self(resource.data.landlordUid) && changedOnly(['status'])) || (self(resource.data.assignedTo) && changedOnly(['status','doneAt']) && request.resource.data.status == 'done');
+      allow delete: if self(resource.data.landlordUid);
+    }
+    match /announcements/{id} {
+      allow read: if self(resource.data.landlordUid) || resident(resource.data.propertyId);
+      allow create: if owns(request.resource.data.propertyId) && self(request.resource.data.landlordUid);
+      allow update, delete: if self(resource.data.landlordUid);
+    }
+    match /propertyChats/{id} {
+      allow read: if signed() && request.auth.uid in resource.data.participantUids;
+      match /messages/{message} {
+        allow read: if household(id);
+        allow create: if household(id) && request.resource.data.senderUid == request.auth.uid && request.resource.data.text is string && request.resource.data.text.size() <= 10000;
+      }
+    }
+    match /directMessages/{id} {
+      allow read: if signed() && request.auth.uid in resource.data.participants;
+      allow create: if signed() && request.auth.uid in request.resource.data.participants && request.resource.data.participants.size() == 2 && request.resource.data.keys().hasOnly(['participants','participantNames']);
+      allow update: if signed() && request.auth.uid in resource.data.participants && request.resource.data.participants.toSet() == resource.data.participants.toSet() && changedOnly(['participants','participantNames']);
+      match /messages/{message} {
+        function member() { return signed() && request.auth.uid in get(/databases/$(database)/documents/directMessages/$(id)).data.participants; }
+        allow read: if signed() && (!exists(/databases/$(database)/documents/directMessages/$(id)) || member());
+        allow create: if member() && request.resource.data.senderUid == request.auth.uid && request.resource.data.text is string && request.resource.data.text.size() <= 10000;
+      }
+    }
+    match /notifications/{uid}/items/{id} {
+      allow read: if self(uid);
+      allow update: if self(uid) && changedOnly(['read']);
+      // Notifications are generated server-side; clients cannot forge cross-user notices.
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
