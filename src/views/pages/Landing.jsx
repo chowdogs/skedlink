@@ -26,12 +26,6 @@ const TENANT_FEATURES = [
     desc: 'See rent, utilities, and maintenance separately. Pay through checkout, download payment records, and request to apply your reusable advance rent.'
   },
   {
-    icon: 'bi-check2-circle',
-    grad: 'from-amber-500 to-orange-500',
-    title: 'Chore Tracking',
-    desc: 'See your assigned chores with due dates and recurrence. Mark them done for landlord verification. Fair auto-assignment means no one person does all the work.'
-  },
-  {
     icon: 'bi-tools',
     grad: 'from-rose-500 to-pink-500',
     title: 'Maintenance Requests',
@@ -50,7 +44,7 @@ const LANDLORD_FEATURES = [
     icon: 'bi-patch-check-fill',
     grad: 'from-violet-500 to-purple-500',
     title: 'Landlord Verification',
-    desc: 'Upload your Government ID and Proof of Property Ownership. Once both are on file, your listings automatically earn a "Verified Landlord" badge that tenants can trust.'
+    desc: 'Upload your Government ID and Proof of Property Ownership for review. The Verified Landlord badge appears after approval.'
   },
   {
     icon: 'bi-shield-check',
@@ -63,12 +57,6 @@ const LANDLORD_FEATURES = [
     grad: 'from-amber-500 to-yellow-500',
     title: 'Billing & Revenue',
     desc: 'Generate itemized rent and utility bills, explain maintenance charges, and track confirmed payments. Paid plans include revenue analytics and report export.'
-  },
-  {
-    icon: 'bi-list-check',
-    grad: 'from-rose-500 to-pink-500',
-    title: 'Chore & Maintenance Management',
-    desc: 'Create chores with smart auto-assign (fewest chores gets the next task), set recurring schedules, verify completions, and manage maintenance requests by priority and status.'
   },
   {
     icon: 'bi-megaphone-fill',
@@ -104,8 +92,8 @@ const STEPS = [
     n: '04',
     icon: 'bi-house-heart-fill',
     title: 'Manage Together',
-    tenant: 'Pay bills, complete chores, report issues, chat with housemates — everything from one dashboard.',
-    landlord: 'Manage bills, chores, maintenance, and announcements for all your properties from one place.'
+    tenant: 'Pay bills, report issues, chat with housemates — everything from one dashboard.',
+    landlord: 'Manage bills, maintenance, and announcements for all your properties from one place.'
   },
 ]
 
@@ -120,7 +108,7 @@ const SHARED_FEATURES = [
     icon: 'bi-bell-fill',
     grad: 'from-amber-500 to-orange-500',
     title: 'Real-Time Notifications',
-    desc: 'Everyone stays informed — rent bills, payment confirmations, chore assignments, maintenance updates, and announcements all arrive as instant in-app notifications.'
+    desc: 'Everyone stays informed — rent bills, payment confirmations, maintenance updates, and announcements all arrive as instant in-app notifications.'
   },
   {
     icon: 'bi-person-lines-fill',
@@ -272,7 +260,7 @@ export const Landing = ({ onGetStarted, onLogin }) => {
                     'Filter by type, price, gender restriction & amenities',
                     'Send inquiries and chat with landlords directly',
                     'Pay itemized bills and view confirmed receipts',
-                    'Track chores, report maintenance issues, stay updated',
+                    'Report maintenance issues and stay updated',
                     'Chat with housemates — privately or in the group',
                     'Keep your schedule and personal details private',
                   ].map(item => (
@@ -305,7 +293,6 @@ export const Landing = ({ onGetStarted, onLogin }) => {
                     'Exchange signed contracts before requesting move-in payment',
                     'Auto-generated monthly rent bills per tenant',
                     'Post itemized charges and manage reusable advance balances',
-                    'Assign and verify chores — auto-assign for fairness',
                     'Track maintenance requests by priority and status',
                     'Post announcements and manage move-out requests',
                   ].map(item => (

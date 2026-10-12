@@ -103,3 +103,47 @@ test('repeated rent generation preserves agreed rate and does not duplicate bill
  const bills=await db.collection('bills').where('inquiryId','==','recurring-rental').get()
  assert.equal(new Set(bills.docs.map(b=>b.id)).size,bills.size)
 })
+test('deleted tenant cleanup removes private records and room membership',async()=>{
+ const {cleanupDeletedUser}=require('../cleanup')
+ const uid='cleanup-tenant', owner='cleanup-owner', propertyId='cleanup-room'
+ await db.doc(`users/${uid}`).set({role:'seeker'})
+ await db.doc(`properties/${propertyId}`).set({ownerId:owner,tenants:[uid],tenantDetails:{[uid]:{name:'Test'}}})
+ await db.doc(`roomReservations/${propertyId}`).set({holds:{'cleanup-inquiry':{tenantUid:uid,status:'approved'}}})
+ await db.doc(`propertyChats/${propertyId}`).set({participantUids:[owner,uid],participantNames:{[uid]:'Test'}})
+ await db.doc('inquiries/cleanup-inquiry').set({propertyId,tenantUid:uid,landlordUid:owner})
+ await db.doc(`applicationLocks/${uid}_${propertyId}`).set({id:'cleanup-inquiry'})
+ await db.doc('bills/cleanup-bill').set({propertyId,tenantUid:uid,landlordUid:owner})
+ await db.doc('tenantAccounts/cleanup-account').set({propertyId,tenantUid:uid,landlordUid:owner})
+ await cleanupDeletedUser(db,getStorage(),uid)
+ assert.equal((await db.doc(`users/${uid}`).get()).exists,false)
+ assert.deepEqual((await db.doc(`properties/${propertyId}`).get()).data().tenants,[])
+ assert.equal((await db.doc('inquiries/cleanup-inquiry').get()).exists,false)
+ assert.equal((await db.doc('bills/cleanup-bill').get()).exists,false)
+ assert.equal((await db.doc('tenantAccounts/cleanup-account').get()).exists,false)
+ assert.equal((await db.doc(`applicationLocks/${uid}_${propertyId}`).get()).exists,false)
+ assert.deepEqual((await db.doc(`roomReservations/${propertyId}`).get()).data().holds,{})
+})
+test('deleted listing cleanup removes application lock and nested conversation',async()=>{
+ const {cleanupDeletedProperty}=require('../cleanup')
+ const id='cleanup-property',tenant='cleanup-property-tenant',inquiry='cleanup-property-inquiry'
+ await db.doc(`inquiries/${inquiry}`).set({propertyId:id,tenantUid:tenant})
+ await db.doc(`inquiries/${inquiry}/messages/m1`).set({text:'Private'})
+ await db.doc(`applicationLocks/${tenant}_${id}`).set({id:inquiry})
+ await db.doc(`propertyChats/${id}/messages/m1`).set({text:'Private'})
+ await db.doc(`roomReservations/${id}`).set({holds:{}})
+ await cleanupDeletedProperty(db,getStorage(),id)
+ assert.equal((await db.doc(`inquiries/${inquiry}`).get()).exists,false)
+ assert.equal((await db.doc(`inquiries/${inquiry}/messages/m1`).get()).exists,false)
+ assert.equal((await db.doc(`applicationLocks/${tenant}_${id}`).get()).exists,false)
+ assert.equal((await db.doc(`propertyChats/${id}/messages/m1`).get()).exists,false)
+ assert.equal((await db.doc(`roomReservations/${id}`).get()).exists,false)
+})
+test('admin verification change updates existing landlord listings',async()=>{
+ const id='verification-room',uid='workflow-owner'
+ await db.doc(`properties/${id}`).set({ownerId:uid,landlordVerified:false})
+ await api.syncLandlordVerification.run({params:{uid},data:{
+  before:{data:()=>({role:'owner',isVerified:false})},
+  after:{data:()=>({role:'owner',isVerified:true})},
+ }})
+ assert.equal((await db.doc(`properties/${id}`).get()).data().landlordVerified,true)
+})

@@ -13,7 +13,6 @@ import { SchedulePainter } from '../components/schedule/SchedulePainter'
 import { PropertyMap } from '../components/map/PropertyMap'
 import { ContactModal } from '../components/property/ContactModal'
 import { TenantDetailModal } from '../components/property/TenantDetailModal'
-import { PayBillModal } from '../components/billing/PayBillModal'
 import { ConfirmModal } from '../ui/ConfirmModal'
 import { useMessages } from '../../contexts/MessagesContext'
 import { useSchedulePainter } from '../../controllers/useSchedulePainter'
@@ -53,12 +52,6 @@ const OCCUPATIONS = [
   'Studying', 'Working', 'Studying & Working',
   'Business Owner', 'Freelancer', 'Remote Worker', 'Other'
 ]
-
-const CHORE_STATUS = {
-  pending: { label: 'Pending', cls: 'bg-amber-100 text-amber-700' },
-  done: { label: 'Submitted — Awaiting Verification', cls: 'bg-indigo-100 text-indigo-700' },
-  verified: { label: 'Verified', cls: 'bg-emerald-100 text-emerald-700' },
-}
 
 const PROPERTY_TYPES = ['Condo/Apartment', 'Studio', 'Room', 'House', 'Townhouse']
 const FILTER_AMENITIES = ['Parking', 'Pool', 'Gym', 'WiFi', 'Aircon', 'Balcony', 'Security', 'Laundry', 'Pets Allowed', 'Kitchen', 'Generator']
@@ -201,10 +194,6 @@ export const SeekerDashboard = ({ user }) => {
   const [lightboxImage, setLightboxImage] = useState(null)
   const [homeProperty, setHomeProperty] = useState(null)
   const [viewingTenant, setViewingTenant] = useState(null)
-  const [myBills, setMyBills] = useState([])
-  const [myPayments, setMyPayments] = useState([])
-  const [myChores, setMyChores] = useState([])
-  const [payingBill, setPayingBill] = useState(null)
   const [moveoutRequests, setMoveoutRequests] = useState([])
   const [showMoveoutForm, setShowMoveoutForm] = useState(false)
   const [moveoutDate, setMoveoutDate] = useState('')
@@ -252,22 +241,6 @@ export const SeekerDashboard = ({ user }) => {
   }, [approvedInquiry?.propertyId])
 
   useEffect(() => {
-    if (!approvedInquiry?.propertyId) { setMyBills([]); return }
-    const q = query(collection(db, 'bills'), where('tenantUid', '==', user.uid))
-    return onSnapshot(q, snap => setMyBills(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-  }, [approvedInquiry?.propertyId, user.uid])
-
-  useEffect(() => {
-    const q = query(collection(db, 'payments'), where('tenantUid', '==', user.uid))
-    return onSnapshot(q, snap => setMyPayments(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-  }, [user.uid])
-
-  useEffect(() => {
-    const q = query(collection(db, 'chores'), where('assignedTo', '==', user.uid))
-    return onSnapshot(q, snap => setMyChores(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-  }, [user.uid])
-
-  useEffect(() => {
     const q = query(collection(db, 'moveoutRequests'), where('tenantUid', '==', user.uid))
     return onSnapshot(q, snap => setMoveoutRequests(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
   }, [user.uid])
@@ -295,20 +268,6 @@ export const SeekerDashboard = ({ user }) => {
       confirmLabel: 'Cancel Inquiry',
       onConfirm: async () => { await platform('cancelApplication', { id: inqId }) },
     })
-  }
-
-  const handleMarkChoreDone = async (chore) => {
-    try {
-      await updateDoc(doc(db, 'chores', chore.id), { status: 'done', doneAt: serverTimestamp() })
-      await notify(chore.landlordUid, {
-        type: 'chore',
-        title: 'Chore Completed',
-        body: `${displayName} marked "${chore.title}" as done. Please verify it.`,
-        tab: 'chores',
-      })
-    } catch (err) {
-      alert('Failed: ' + err.message)
-    }
   }
 
   const handleRequestMoveout = async () => {
@@ -1112,166 +1071,6 @@ export const SeekerDashboard = ({ user }) => {
                 </CardContent>
               </Card>
 
-              {/* ── Bills Section ── */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>
-                    <i className='bi bi-receipt mr-2 text-indigo-500' />
-                    Bills & Payments
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {(() => {
-                    const visibleBills = myBills.filter(b => b.schemaVersion !== 2 && (b.type !== 'rent' || b.tenantUid === user.uid))
-                    if (visibleBills.length === 0) return <p className='text-sm text-slate-500'>No bills posted yet for this property.</p>
-                    const byMonth = visibleBills.reduce((acc, b) => {
-                      const m = b.month || 'Unknown'
-                      if (!acc[m]) acc[m] = []
-                      acc[m].push(b)
-                      return acc
-                    }, {})
-                    const months = Object.keys(byMonth).sort((a, b) => b > a ? 1 : -1)
-                    return (
-                    <div className='space-y-5'>
-                      {months.map(month => (
-                        <div key={month}>
-                          <p className='text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5'><i className='bi bi-calendar3' />{month}</p>
-                          <div className='space-y-3'>
-                      {byMonth[month].map(bill => {
-                        const payment = myPayments.find(p => p.billId === bill.id)
-                        const status = payment?.status || 'unpaid'
-                        const isPaid = status === 'paid'
-                        const isUnderReview = status === 'under_review'
-                        const isRejected = status === 'rejected'
-                        const isOverdue = !isPaid && bill.dueDate && bill.dueDate < new Date().toISOString().slice(0, 10)
-                        return (
-                          <div key={bill.id} className={`p-4 rounded-2xl border ${
-                            isPaid ? 'bg-emerald-50 border-emerald-100' :
-                            isOverdue ? 'bg-rose-50 border-rose-100' :
-                            'bg-white border-slate-100'
-                          }`}>
-                            <div className='flex items-start justify-between gap-3'>
-                              <div className='min-w-0'>
-                                <div className='flex items-center gap-2 flex-wrap'>
-                                  <p className='font-bold text-slate-900 text-sm'>{bill.title}</p>
-                                  {isOverdue && !isPaid && (
-                                    <span className='text-[10px] font-bold text-rose-600 px-1.5 py-0.5 bg-rose-100 rounded-full'>OVERDUE</span>
-                                  )}
-                                </div>
-                                <p className='text-xl font-bold text-indigo-600 mt-0.5'>₱{Number(bill.perTenantAmount ?? bill.totalAmount ?? bill.amount ?? 0).toLocaleString()}</p>
-                                <div className='flex items-center gap-3 text-xs text-slate-400 mt-1'>
-                                  <span>{bill.month}</span>
-                                  {bill.dueDate && <span>Due {bill.dueDate}</span>}
-                                </div>
-                                {isRejected && payment?.rejectionReason && (
-                                  <p className='text-xs text-rose-600 mt-1'>Rejected: {payment.rejectionReason}</p>
-                                )}
-                              </div>
-                              <div className='flex flex-col items-end gap-2 shrink-0'>
-                                {isPaid ? (
-                                  <span className='px-2.5 py-1 text-xs font-bold bg-emerald-100 text-emerald-700 rounded-full'>
-                                    <i className='bi bi-check-circle-fill mr-1' />Paid
-                                  </span>
-                                ) : isUnderReview ? (
-                                  <span className='px-2.5 py-1 text-xs font-bold bg-amber-100 text-amber-700 rounded-full'>
-                                    <i className='bi bi-hourglass-split mr-1' />Under Review
-                                  </span>
-                                ) : (
-                                  <button
-                                    onClick={() => setPayingBill({ bill, existingPayment: isRejected ? payment : null })}
-                                    className='px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-violet-600 to-indigo-600 rounded-xl hover:from-violet-700 hover:to-indigo-700 transition-all whitespace-nowrap'
-                                  >
-                                    {isRejected ? 'Resubmit' : 'Pay Now'}
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )
-                  })()}
-                </CardContent>
-              </Card>
-
-              {/* ── Chores Section ── */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>
-                    <i className='bi bi-check2-circle mr-2 text-indigo-500' />
-                    My Chores
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {myChores.length === 0 ? (
-                    <p className='text-sm text-slate-500'>No chores assigned to you yet.</p>
-                  ) : (
-                    <div className='space-y-3'>
-                      {myChores
-                        .slice()
-                        .sort((a, b) => (a.dueDate > b.dueDate ? 1 : -1))
-                        .map(chore => {
-                          const cfg = CHORE_STATUS[chore.status] || CHORE_STATUS.pending
-                          const isOverdue = chore.status === 'pending' && chore.dueDate && chore.dueDate < new Date().toISOString().slice(0, 10)
-                          return (
-                            <div key={chore.id} className={`flex items-center justify-between gap-3 p-3.5 rounded-2xl border ${
-                              chore.status === 'verified' ? 'bg-emerald-50 border-emerald-100' :
-                              isOverdue ? 'bg-rose-50 border-rose-100' :
-                              'bg-white border-slate-100'
-                            }`}>
-                              <div className='flex items-center gap-3 min-w-0'>
-                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                                  chore.status === 'verified' ? 'bg-emerald-100' :
-                                  chore.status === 'done' ? 'bg-indigo-100' :
-                                  isOverdue ? 'bg-rose-100' : 'bg-amber-100'
-                                }`}>
-                                  <i className={`bi ${
-                                    chore.status === 'verified' ? 'bi-patch-check-fill text-emerald-600' :
-                                    chore.status === 'done' ? 'bi-check-circle text-indigo-600' :
-                                    isOverdue ? 'bi-exclamation-circle text-rose-500' :
-                                    'bi-hourglass-split text-amber-600'
-                                  } text-sm`} />
-                                </div>
-                                <div className='min-w-0'>
-                                  <div className='flex items-center gap-1.5 flex-wrap'>
-                                    <p className={`font-semibold text-sm ${chore.status === 'verified' ? 'line-through text-slate-400' : 'text-slate-900'}`}>
-                                      {chore.title}
-                                    </p>
-                                    {chore.repeat && chore.repeat !== 'none' && (
-                                      <span className='px-1.5 py-0.5 bg-violet-100 text-violet-700 text-[10px] font-bold rounded-full capitalize'>{chore.repeat}</span>
-                                    )}
-                                  </div>
-                                  <p className='text-xs text-slate-400'>
-                                    {chore.dueDate && `Due ${chore.dueDate}`}
-                                    {isOverdue && <span className='text-rose-500 font-semibold ml-1'> · Overdue!</span>}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className='flex items-center gap-2 shrink-0'>
-                                <span className={`px-2 py-0.5 text-xs font-semibold rounded-full whitespace-nowrap ${cfg.cls}`}>
-                                  {chore.status === 'done' ? 'Awaiting Verify' : cfg.label}
-                                </span>
-                                {chore.status === 'pending' && (
-                                  <button
-                                    onClick={() => handleMarkChoreDone(chore)}
-                                    className='text-xs text-indigo-600 font-semibold hover:text-indigo-800 px-2.5 py-1.5 bg-indigo-50 rounded-lg border border-indigo-200 transition-colors whitespace-nowrap'
-                                  >
-                                    Mark Done
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
               {/* Housemates */}
               <Card>
                 <CardHeader>
@@ -1689,16 +1488,6 @@ export const SeekerDashboard = ({ user }) => {
           onClose={() => setViewingTenant(null)}
         />
       )}
-      {payingBill && (
-        <PayBillModal
-          bill={payingBill.bill}
-          tenant={user}
-          landlordUid={homeProperty?.ownerId || ''}
-          existingPayment={payingBill.existingPayment || null}
-          onClose={() => setPayingBill(null)}
-        />
-      )}
-
       <ConfirmModal dialog={dialog} onClose={() => setDialog(null)} />
 
       {/* Photo lightbox */}

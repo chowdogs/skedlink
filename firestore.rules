@@ -11,12 +11,12 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if self(uid);
       allow create: if self(uid) && request.resource.data.uid == uid && request.resource.data.role in ['owner','seeker'] && request.resource.data.keys().hasOnly(['uid','email','fullName','role','phone','weeklySchedule','customActivities']);
-      allow update: if self(uid) && changedOnly(['fullName','phone','weeklySchedule','customActivities','profilePhoto','gender','age','occupation','bio','validIdUrl','verificationDocs','isVerified']);
+      allow update: if self(uid) && changedOnly(['fullName','phone','weeklySchedule','customActivities','profilePhoto','gender','age','occupation','bio','validIdUrl','verificationDocs']);
     }
     // All listing writes go through server validation. Only safe household summaries are stored here.
     match /properties/{id} {
       allow read: if signed();
-      allow update: if (owns(id) && changedOnly(['houseRules','emergencyContacts','landlordContact','landlordVerified'])) || (resident(id) && changedOnly(['houseRules','emergencyContacts']));
+      allow update: if (owns(id) && changedOnly(['houseRules','emergencyContacts','landlordContact'])) || (resident(id) && changedOnly(['houseRules','emergencyContacts']));
     }
     match /inquiries/{id} {
       allow read: if party(resource.data);
@@ -29,12 +29,9 @@ service cloud.firestore {
     }
     match /bills/{id} {
       allow read: if party(resource.data);
-      allow update: if self(resource.data.landlordUid) && !('schemaVersion' in resource.data) && changedOnly(['isRevenue','overdueNotifiedAt']);
     }
     match /payments/{id} {
       allow read: if party(resource.data);
-      allow create: if self(request.resource.data.tenantUid) && request.resource.data.status == 'under_review' && !('schemaVersion' in get(/databases/$(database)/documents/bills/$(request.resource.data.billId)).data) && get(/databases/$(database)/documents/bills/$(request.resource.data.billId)).data.tenantUid == request.auth.uid && request.resource.data.landlordUid == get(/databases/$(database)/documents/bills/$(request.resource.data.billId)).data.landlordUid;
-      allow update: if !('method' in resource.data) && ((self(resource.data.landlordUid) && changedOnly(['status','reviewedAt','rejectionReason']) && request.resource.data.status in ['paid','rejected']) || (self(resource.data.tenantUid) && resource.data.status == 'rejected' && changedOnly(['referenceNo','receiptImageBase64','status','amount','submittedAt']) && request.resource.data.status == 'under_review'));
     }
     match /tenantAccounts/{id} { allow read: if party(resource.data); }
     match /advanceRequests/{id} { allow read: if party(resource.data); }
@@ -49,12 +46,6 @@ service cloud.firestore {
       allow read: if party(resource.data);
       allow create: if self(request.resource.data.tenantUid) && resident(request.resource.data.propertyId) && request.resource.data.landlordUid == get(/databases/$(database)/documents/properties/$(request.resource.data.propertyId)).data.ownerId && request.resource.data.status == 'pending';
       allow update: if self(resource.data.tenantUid) && changedOnly(['status']) && request.resource.data.status == 'cancelled' && resource.data.status == 'pending';
-    }
-    match /chores/{id} {
-      allow read: if self(resource.data.landlordUid) || self(resource.data.assignedTo);
-      allow create: if owns(request.resource.data.propertyId) && self(request.resource.data.landlordUid) && request.resource.data.assignedTo in get(/databases/$(database)/documents/properties/$(request.resource.data.propertyId)).data.tenants;
-      allow update: if (self(resource.data.landlordUid) && changedOnly(['status'])) || (self(resource.data.assignedTo) && changedOnly(['status','doneAt']) && request.resource.data.status == 'done');
-      allow delete: if self(resource.data.landlordUid);
     }
     match /announcements/{id} {
       allow read: if self(resource.data.landlordUid) || resident(resource.data.propertyId);

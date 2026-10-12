@@ -29,7 +29,7 @@ The reused PayMongo account displays **Joe Bean Coffee Shop** on its hosted chec
 
 The commission is a test accounting entry. Automated marketplace split payouts, escrow custody, refunds and dispute handling are not implemented. Gateway processing charges are not represented as platform revenue. Do not describe the demo as real escrow or payouts.
 
-The default contract template is intentionally deferred until the user supplies their reference. Landlords can upload their own PDF now. PDF upload/exchange is not automatic legal-document drafting or digital-signature verification.
+Landlords can download a blank, printable HTML rental agreement draft from Applications & contracts, fill it in, and save it as PDF from the browser before uploading it. The draft has no automatic legal review or digital-signature verification.
 
 ## Setup
 
@@ -74,7 +74,21 @@ npm run build
 
 Publish the resulting `build` through the existing hosting workflow. Functions are mandatory for new financial and tenancy actions; there is no insecure client-write fallback.
 
-Migration strips sensitive tenant fields from shared property documents, records listing inventory for subscription enforcement and splits old shared bills into private per-tenant records. Original records are retained in the server-only `migrationArchive`. It does not invent historic resolution dates, signed contracts, deposits or advance balances. Existing tenants retain access; legacy applications without rental dates must be cancelled and resubmitted to enter the new contract flow. Legacy billing remains separately accessible.
+Migration strips sensitive tenant fields from shared property documents, records listing inventory for subscription enforcement and splits old shared bills into private per-tenant records. Original records are retained in the server-only `migrationArchive`. It does not invent historic resolution dates, signed contracts, deposits or advance balances. Existing tenants retain access; legacy applications without rental dates must be cancelled and resubmitted to enter the new contract flow. The old manual-payment and chores screens are retired.
+
+### Account deletion and retired data
+
+The new Auth deletion trigger removes a deleted user's Firestore records, contracts, messages and listing data asynchronously. Listing deletion returns after the listing transaction, then a Firestore trigger removes related applications, chats and reservations. Bulk deletion through the Admin SDK does not emit individual Auth deletion events. After a Console bulk reset, run the orphan preview, check its UID list, then apply it. Back up Firestore and Storage first, because cleanup permanently deletes data.
+
+```powershell
+cd functions
+npm run cleanup:orphans -- --project skedlink
+npm run cleanup:orphans -- --project skedlink --apply
+npm run cleanup:retired -- --project skedlink
+npm run cleanup:retired -- --project skedlink --apply
+```
+
+`cleanup:retired` deletes legacy bills, manual-payment records and chores only. The server-only `migrationArchive` remains for historical review. Both scripts preview by default; run `--apply` only after checking the counts and backup. A Firebase admin can set `users/{uid}.isVerified` in the Console after reviewing the landlord's documents; a trigger syncs that decision to the landlord's listings. Existing verification flags granted before these rules should be audited before production rollout.
 
 ### Local verification
 
@@ -95,7 +109,7 @@ Tests use only the `demo-skedlink` emulator project. A Windows emulator may leav
 
 - 4 React interaction tests passed.
 - 12 rental-domain tests passed.
-- 16 Firestore/Storage rules and workflow integration tests passed against local emulators.
+- 20 Firestore/Storage rules and workflow integration tests passed against local emulators, including deletion cleanup and landlord verification sync.
 - The production build compiled successfully and the frontend was deployed through Vercel. Live browser checks passed for both dashboards and the paid itemized statement without browser errors. Contract exchange, private PDF download, hosted test-card checkout, automatic webhook settlement, subscription activation and advance approval were verified against deployed services using temporary test accounts.
 - Production-only dependency audit for the new Functions package reported zero known vulnerabilities. Development tooling and the existing frontend dependency tree are not covered by that result.
 

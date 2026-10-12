@@ -7,7 +7,9 @@
   },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "migrate": "node scripts/migrate.js"
+    "migrate": "node scripts/migrate.js",
+    "cleanup:orphans": "node scripts/cleanup-orphans.js",
+    "cleanup:retired": "node scripts/remove-retired-data.js"
   },
   "dependencies": {
     "firebase-admin": "^14.5.0",

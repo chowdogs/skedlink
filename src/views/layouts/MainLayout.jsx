@@ -9,7 +9,6 @@ const TYPE_ICON = {
   bill:     { icon: 'bi-receipt',            bg: 'bg-amber-100',   text: 'text-amber-600' },
   payment:  { icon: 'bi-cash-coin',          bg: 'bg-emerald-100', text: 'text-emerald-600' },
   inquiry:  { icon: 'bi-envelope-fill',      bg: 'bg-violet-100',  text: 'text-violet-600' },
-  chore:    { icon: 'bi-check2-circle',      bg: 'bg-teal-100',    text: 'text-teal-600' },
   approval: { icon: 'bi-patch-check-fill',   bg: 'bg-emerald-100', text: 'text-emerald-600' },
   moveout:  { icon: 'bi-box-arrow-right',    bg: 'bg-rose-100',    text: 'text-rose-600' },
   default:  { icon: 'bi-bell-fill',          bg: 'bg-slate-100',   text: 'text-slate-600' },

@@ -3,9 +3,11 @@ const { defineSecret, defineString } = require('firebase-functions/params')
 const { initializeApp } = require('firebase-admin/app')
 const { getStorage } = require('firebase-admin/storage')
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore')
-const { onDocumentWritten, onDocumentCreated } = require('firebase-functions/v2/firestore')
+const { onDocumentWritten, onDocumentCreated, onDocumentDeleted } = require('firebase-functions/v2/firestore')
+const { onUserDeleted } = require('firebase-functions/v2/identity')
 const crypto = require('node:crypto')
 const D = require('./domain')
+const { cleanupDeletedUser, cleanupDeletedProperty } = require('./cleanup')
 initializeApp()
 const db = getFirestore(), region = 'asia-southeast1'
 const paymongoKey = defineSecret('PAYMONGO_SECRET_KEY'), webhookKey = defineSecret('PAYMONGO_WEBHOOK_SECRET')
@@ -39,7 +41,7 @@ exports.platform = onCall({ region, invoker: 'public' }, async request => {
           const allowed = ['title','description','price','capacity','propertyType','amenities','rules','photos','location','permits','houseRules','emergencyContacts','rentalTerms']
           const clean = Object.fromEntries(allowed.filter(k => input[k] !== undefined).map(k => [k, input[k]]))
           clean.price = Number(input.price); clean.capacity = Number(input.capacity); clean.rentalTerms = { ...t }; delete clean.rentalTerms.legacy
-          tx.set(pRef, { ...clean, ownerId: uid, updatedAt: stamp(), ...(!pSnap.exists ? { createdAt: stamp(), tenants: [], tenantDetails: {} } : {}) }, { merge: true })
+          tx.set(pRef, { ...clean, ownerId: uid, landlordVerified: user.isVerified === true, updatedAt: stamp(), ...(!pSnap.exists ? { createdAt: stamp(), tenants: [], tenantDetails: {} } : {}) }, { merge: true })
           if (!pSnap.exists) tx.set(inventory, { listingIds: [...ids, id] })
         })
         return { id }
@@ -382,6 +384,13 @@ exports.syncHouseholdProfile = onDocumentWritten({ region, document: 'users/{uid
   const properties=await db.collection('properties').where('tenants','array-contains',event.params.uid).get()
   for(const property of properties.docs)await property.ref.update({[`tenantDetails.${event.params.uid}`]:privateSummary(after),compatibilityUpdatedAt:stamp()})
 })
+
+exports.syncLandlordVerification = onDocumentWritten({ region, document: 'users/{uid}' }, async event => {
+  const before = event.data.before.data(), after = event.data.after.data()
+  if (!after || after.role !== 'owner' || before?.isVerified === after.isVerified) return
+  const properties = await db.collection('properties').where('ownerId', '==', event.params.uid).get()
+  for (const property of properties.docs) await property.ref.update({ landlordVerified: after.isVerified === true })
+})
 async function notice(uid,id,title,body,tab,type='default'){
   if(!uid)return
   await db.collection('notifications').doc(uid).collection('items').doc(id).set({title,body,tab,type,read:false,createdAt:stamp()})
@@ -401,10 +410,6 @@ exports.paymentNotice=onDocumentWritten({region,document:'payments/{id}'},async 
 exports.maintenanceNotice=onDocumentWritten({region,document:'maintenanceRequests/{id}'},async event=>{
   const before=event.data.before.data(),m=event.data.after.data();if(!m||before?.status===m.status)return
   await notice(before?m.tenantUid:m.landlordUid,event.id,'Maintenance update',`${m.title}: ${m.status.replaceAll('_',' ')}`,before?'myhome':'maintenance')
-})
-exports.choreNotice=onDocumentWritten({region,document:'chores/{id}'},async event=>{
-  const before=event.data.before.data(),c=event.data.after.data();if(!c||before?.status===c.status)return
-  await notice(c.status==='done'?c.landlordUid:c.assignedTo,event.id,'Chore update',`${c.title}: ${c.status}`,c.status==='done'?'chores':'myhome','chore')
 })
 exports.moveoutNotice=onDocumentWritten({region,document:'moveoutRequests/{id}'},async event=>{
   const before=event.data.before.data(),m=event.data.after.data();if(!m||before?.status===m.status)return
@@ -435,4 +440,12 @@ const { onSchedule } = require('firebase-functions/v2/scheduler')
 exports.dailyRent = onSchedule({ region, schedule: '5 0 * * *', timeZone: 'Asia/Manila' }, async () => {
   const owners = await db.collection('users').where('role', '==', 'owner').get()
   for (const owner of owners.docs) await generateRent(owner.id)
+})
+
+exports.cleanupDeletedUser = onUserDeleted({ region, timeoutSeconds: 540 }, async event => {
+  await cleanupDeletedUser(db, getStorage(), event.data.uid)
+})
+
+exports.cleanupDeletedProperty = onDocumentDeleted({ region, document: 'properties/{id}', timeoutSeconds: 540 }, async event => {
+  await cleanupDeletedProperty(db, getStorage(), event.params.id)
 })

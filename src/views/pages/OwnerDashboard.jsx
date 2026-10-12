@@ -17,7 +17,6 @@ import { TenantDetailModal } from '../components/property/TenantDetailModal'
 import { PermitUploader } from '../components/property/PermitUploader'
 import { PostBillModal } from '../components/billing/PostBillModal'
 import { useMessages } from '../../contexts/MessagesContext'
-import { ChoreModal } from '../components/chores/ChoreModal'
 import { ConfirmModal } from '../ui/ConfirmModal'
 import {
   collection, query, where, onSnapshot,
@@ -93,19 +92,6 @@ const PhotoGrid = ({ photos, onPhotoClick }) => {
   )
 }
 
-const PAYMENT_STATUS = {
-  under_review: { label: 'Under Review', cls: 'bg-amber-100 text-amber-700' },
-  paid:         { label: 'Paid',         cls: 'bg-emerald-100 text-emerald-700' },
-  rejected:     { label: 'Rejected',     cls: 'bg-rose-100 text-rose-700' },
-  unpaid:       { label: 'Unpaid',       cls: 'bg-slate-100 text-slate-600' },
-}
-
-const CHORE_STATUS = {
-  pending:  { label: 'Pending',  cls: 'bg-amber-100 text-amber-700' },
-  done:     { label: 'Done — Awaiting Verification', cls: 'bg-indigo-100 text-indigo-700' },
-  verified: { label: 'Verified', cls: 'bg-emerald-100 text-emerald-700' },
-}
-
 export const OwnerDashboard = ({ user }) => {
   const { updateUserProfile, changePassword, logout } = useAuth()
   const { openConversation } = useMessages()
@@ -113,7 +99,6 @@ export const OwnerDashboard = ({ user }) => {
   const [properties, setProperties] = useState([])
   const [inquiries, setInquiries] = useState([])
   const [bills, setBills] = useState([])
-  const [chores, setChores] = useState([])
   const [payments, setPayments] = useState([])
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingProperty, setEditingProperty] = useState(null)
@@ -124,8 +109,6 @@ export const OwnerDashboard = ({ user }) => {
   const [subscriptions] = useRecords('subscriptions', 'landlordUid', user.uid)
   const premium = listingLimit(subscriptions[0]) > 1
   useEffect(() => { window.sessionStorage.removeItem('skedlink:onboarding-plan') }, [])
-  const [showCreateChore, setShowCreateChore] = useState(false)
-  const [reviewPaymentData, setReviewPaymentData] = useState(null)
   const [moveoutRequests, setMoveoutRequests] = useState([])
   const [maintenanceRequests, setMaintenanceRequests] = useState([])
   const [announcements, setAnnouncements] = useState([])
@@ -178,11 +161,6 @@ export const OwnerDashboard = ({ user }) => {
   }, [user.uid])
 
   useEffect(() => {
-    const q = query(collection(db, 'chores'), where('landlordUid', '==', user.uid))
-    return onSnapshot(q, snap => setChores(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-  }, [user.uid])
-
-  useEffect(() => {
     const q = query(collection(db, 'payments'), where('landlordUid', '==', user.uid))
     return onSnapshot(q, snap => setPayments(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
   }, [user.uid])
@@ -201,32 +179,6 @@ export const OwnerDashboard = ({ user }) => {
     const q = query(collection(db, 'announcements'), where('landlordUid', '==', user.uid))
     return onSnapshot(q, snap => setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
   }, [user.uid])
-
-  // Overdue bill notifications
-  useEffect(() => {
-    if (bills.length === 0) return
-    const today = new Date().toISOString().slice(0, 10)
-    const run = async () => {
-      for (const bill of bills) {
-        if (!bill.dueDate || bill.dueDate >= today) continue
-        if (bill.overdueNotifiedAt === today) continue
-        const tenantUid = bill.tenantUid || null
-        if (!tenantUid) continue
-        const paid = payments.find(p => p.billId === bill.id && (p.status === 'paid' || p.status === 'under_review'))
-        if (paid) continue
-        try {
-          await updateDoc(doc(db, 'bills', bill.id), { overdueNotifiedAt: today })
-          await notify(tenantUid, {
-            type: 'bill',
-            title: 'Overdue Bill Reminder',
-            body: `Your bill "${bill.title}" was due on ${bill.dueDate} and has not been paid yet. Please settle it soon.`,
-            tab: 'myhome',
-          })
-        } catch {}
-      }
-    }
-    run()
-  }, [bills, payments])
 
   const totalCapacity = properties.reduce((s, p) => s + (Number(p.capacity) || 0), 0)
   const occupiedSlots = properties.reduce((s, p) => s + (p.tenants?.length || 0), 0)
@@ -268,92 +220,6 @@ export const OwnerDashboard = ({ user }) => {
   }
 
   const handleApprove = () => setActiveTab('applications')
-
-  const handleApprovePayment = async (paymentId, tenantUid, billTitle, amount) => {
-    try {
-      await updateDoc(doc(db, 'payments', paymentId), { status: 'paid', reviewedAt: serverTimestamp() })
-      setReviewPaymentData(null)
-      await notify(tenantUid, {
-        type: 'payment',
-        title: 'Payment Confirmed!',
-        body: `Your payment of ₱${Number(amount).toLocaleString()} for "${billTitle}" has been marked as paid.`,
-        tab: 'myhome',
-      })
-    } catch (err) {
-      alert('Failed: ' + err.message)
-    }
-  }
-
-  const handleRejectPayment = (paymentId, tenantUid, billTitle) => {
-    setDialog({
-      title: 'Reject Payment',
-      message: 'The tenant will be notified and can resubmit their payment.',
-      hasInput: true,
-      inputLabel: 'Reason (optional)',
-      inputPlaceholder: 'e.g. Invalid reference number, blurry screenshot…',
-      variant: 'danger',
-      icon: 'bi-x-circle-fill',
-      confirmLabel: 'Reject Payment',
-      onConfirm: async (reason) => {
-        await updateDoc(doc(db, 'payments', paymentId), {
-          status: 'rejected',
-          rejectionReason: reason,
-          reviewedAt: serverTimestamp()
-        })
-        setReviewPaymentData(null)
-        await notify(tenantUid, {
-          type: 'payment',
-          title: 'Payment Rejected',
-          body: `Your payment for "${billTitle}" was rejected${reason ? `: ${reason}` : ''}. Please resubmit.`,
-          tab: 'myhome',
-        })
-      },
-    })
-  }
-
-  const handleVerifyChore = async (chore) => {
-    try {
-      await updateDoc(doc(db, 'chores', chore.id), { status: 'verified' })
-      await notify(chore.assignedTo, {
-        type: 'chore',
-        title: 'Chore Verified!',
-        body: `Your landlord verified "${chore.title}". Great job!`,
-        tab: 'myhome',
-      })
-    } catch (err) {
-      alert('Failed: ' + err.message)
-    }
-  }
-
-  const handleToggleRevenue = async (billId, newValue) => {
-    try {
-      await updateDoc(doc(db, 'bills', billId), { isRevenue: newValue })
-    } catch (err) {
-      alert('Failed: ' + err.message)
-    }
-  }
-
-  const handleDeleteBill = (billId) => {
-    setDialog({
-      title: 'Delete Bill',
-      message: 'This will permanently remove the bill and cannot be undone.',
-      variant: 'danger',
-      icon: 'bi-receipt',
-      confirmLabel: 'Delete Bill',
-      onConfirm: async () => { await deleteDoc(doc(db, 'bills', billId)) },
-    })
-  }
-
-  const handleDeleteChore = (choreId) => {
-    setDialog({
-      title: 'Delete Chore',
-      message: 'This chore will be permanently removed.',
-      variant: 'danger',
-      icon: 'bi-check2-circle',
-      confirmLabel: 'Delete Chore',
-      onConfirm: async () => { await deleteDoc(doc(db, 'chores', choreId)) },
-    })
-  }
 
   const evictTenant = async (propertyId, propertyTitle, tenantUid, tenantName, moveoutReqId = null) => {
     await platform('removeTenant', { propertyId, tenantUid, moveoutReqId })
@@ -478,7 +344,7 @@ export const OwnerDashboard = ({ user }) => {
     }
   }
 
-  const landlordIsVerified = !!(govIdDoc && ownerProofDoc)
+  const landlordIsVerified = user.isVerified === true
 
   const handleUploadVerificationDoc = async (e, docKey) => {
     const file = e.target.files?.[0]
@@ -493,22 +359,11 @@ export const OwnerDashboard = ({ user }) => {
         reader.readAsDataURL(file)
       })
       const docData = { data: dataUrl, fileName: file.name }
-      const newGovId = docKey === 'govId' ? docData : govIdDoc
-      const newOwnerProof = docKey === 'ownershipProof' ? docData : ownerProofDoc
-      const nowVerified = !!(newGovId && newOwnerProof)
       const updates = { [`verificationDocs.${docKey}`]: docData }
-      if (nowVerified) updates.isVerified = true
       await updateUserProfile(updates)
       if (docKey === 'govId') setGovIdDoc(docData)
       else setOwnerProofDoc(docData)
-      if (nowVerified && !landlordIsVerified) {
-        for (const property of properties) {
-          try { await updateDoc(doc(db, 'properties', property.id), { landlordVerified: true }) } catch {}
-        }
-        setProfileMsg('Verification complete! You are now a Verified Landlord.')
-      } else {
-        setProfileMsg('Document uploaded!')
-      }
+      setProfileMsg('Document uploaded. Verification requires review.')
       setTimeout(() => setProfileMsg(''), 4000)
     } catch (err) {
       setProfileMsg('Upload failed: ' + err.message)
@@ -575,8 +430,6 @@ export const OwnerDashboard = ({ user }) => {
     { id: 'applications', label: 'Applications' },
     { id: 'payments', label: 'Payments' },
     { id: 'plans', label: 'Plans' },
-    { id: 'bills', label: 'Legacy bills' },
-    { id: 'chores', label: 'Chores' },
     { id: 'maintenance', label: 'Maintenance' },
     { id: 'analytics', label: 'Analytics' },
     { id: 'profile', label: 'My Profile' }
@@ -617,11 +470,6 @@ export const OwnerDashboard = ({ user }) => {
                 : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
             }`}>
             {tab.label}
-            {tab.id === 'bills' && payments.filter(p => p.status === 'under_review').length > 0 && (
-              <span className='absolute -top-1 -right-1 w-4 h-4 bg-amber-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center'>
-                {payments.filter(p => p.status === 'under_review').length}
-              </span>
-            )}
             {tab.id === 'properties' && moveoutRequests.filter(r => r.status === 'pending').length > 0 && (
               <span className='absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center'>
                 {moveoutRequests.filter(r => r.status === 'pending').length}
@@ -1004,235 +852,6 @@ export const OwnerDashboard = ({ user }) => {
         </div>
       )}
 
-      {/* ── BILLS ── */}
-      {activeTab === 'bills' && (
-        <div className='space-y-6'>
-          <div className='flex items-center justify-between'>
-            <div>
-              <h2 className='text-lg font-bold text-slate-900' style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}>Bills & Payments</h2>
-              <p className='text-sm text-slate-500'>Previous billing records. Use Payments for new itemized bills and receipts.</p>
-            </div>
-            <Button variant='primary' onClick={() => setShowPostBill(true)} disabled={properties.length === 0}>
-              <i className='bi bi-plus-lg mr-1.5' /> Post Bill
-            </Button>
-          </div>
-
-          {properties.length === 0 && (
-            <div className='text-center py-16 text-slate-500'>
-              <i className='bi bi-building text-5xl text-slate-300 block mb-3' />
-              Add a property first before posting bills.
-            </div>
-          )}
-
-          {bills.length === 0 && properties.length > 0 && (
-            <div className='text-center py-16'>
-              <i className='bi bi-receipt text-5xl text-slate-300 block mb-3' />
-              <p className='text-slate-500'>No bills yet. Rent bills appear automatically once tenants are approved.</p>
-            </div>
-          )}
-
-          {(() => {
-            const byMonth = bills.filter(b => b.schemaVersion !== 2).slice().sort((a, b) => (a.month > b.month ? -1 : 1)).reduce((acc, b) => {
-              const m = b.month || 'Unknown'; if (!acc[m]) acc[m] = []; acc[m].push(b); return acc
-            }, {})
-            const months = Object.keys(byMonth).sort((a, b) => b > a ? 1 : -1)
-            return (<div className='space-y-8'>{months.map(month => (<div key={month} className='space-y-4'>
-              <p className='text-xs font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5'><i className='bi bi-calendar3' />{month}</p>
-              {byMonth[month].map(bill => {
-                const prop = properties.find(p => p.id === bill.propertyId)
-                const isRent = bill.type === 'rent'
-
-                if (isRent) {
-                  // Rent bill: per-tenant, find the payment for this tenant
-                  const payment = payments.find(p => p.billId === bill.id && p.tenantUid === bill.tenantUid)
-                  const tenantDetails = prop?.tenantDetails?.[bill.tenantUid]
-                  const tenantName = tenantDetails?.name || 'Tenant'
-                  const status = payment?.status || 'unpaid'
-                  const cfg = PAYMENT_STATUS[status] || PAYMENT_STATUS.unpaid
-                  return (
-                    <Card key={bill.id}>
-                      <CardContent>
-                        <div className='flex items-start justify-between gap-3 mb-3'>
-                          <div>
-                            <div className='flex items-center gap-2'>
-                              <span className='px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-full uppercase tracking-wide'>Rent</span>
-                              <p className='font-bold text-slate-900 text-base'>{bill.title}</p>
-                            </div>
-                            <p className='text-2xl font-bold text-indigo-600 mt-0.5'>₱{Number(bill.perTenantAmount || bill.totalAmount).toLocaleString()}</p>
-                            <div className='flex items-center gap-3 text-xs text-slate-500 mt-1'>
-                              <span><i className='bi bi-calendar3 mr-1' />{bill.month}</span>
-                              {bill.dueDate && <span><i className='bi bi-clock mr-1' />Due {bill.dueDate}</span>}
-                              <span className='text-slate-400'>{bill.propertyTitle}</span>
-                            </div>
-                          </div>
-                          <div className='flex items-center gap-2'>
-                            <button
-                              onClick={() => handleToggleRevenue(bill.id, !bill.isRevenue)}
-                              title={bill.isRevenue ? 'Counted as revenue — click to exclude' : 'Not counted as revenue — click to include'}
-                              className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-full border transition-colors ${
-                                bill.isRevenue
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                                  : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200'
-                              }`}
-                            >
-                              <i className={`bi ${bill.isRevenue ? 'bi-graph-up-arrow' : 'bi-dash-circle'}`} />
-                              {bill.isRevenue ? 'Revenue' : 'Not Revenue'}
-                            </button>
-                            <button onClick={() => handleDeleteBill(bill.id)} className='text-slate-300 hover:text-rose-500 transition-colors' title='Delete'>
-                              <i className='bi bi-trash3 text-sm' />
-                            </button>
-                          </div>
-                        </div>
-                        <div className='flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-100'>
-                          <div className='flex items-center gap-2'>
-                            <div className='w-7 h-7 rounded-full overflow-hidden bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-600 shrink-0'>
-                              {tenantDetails?.profilePhoto ? <img src={tenantDetails.profilePhoto} alt='' className='w-full h-full object-cover' /> : tenantName.charAt(0).toUpperCase()}
-                            </div>
-                            <p className='text-sm font-medium text-slate-900'>{tenantName}</p>
-                          </div>
-                          <div className='flex items-center gap-2'>
-                            <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${cfg.cls}`}>{cfg.label}</span>
-                            {payment?.status === 'under_review' && (
-                              <button onClick={() => setReviewPaymentData({ payment, bill, tenantName })} className='text-xs text-indigo-600 font-semibold hover:text-indigo-800 px-2 py-1 bg-indigo-50 rounded-lg border border-indigo-200 transition-colors'>Review</button>
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )
-                }
-
-                // Utility/other bill: show split among all tenants
-                const tenantEntries = prop?.tenantDetails ? Object.entries(prop.tenantDetails) : []
-                const billPayments = payments.filter(p => p.billId === bill.id)
-                return (
-                  <Card key={bill.id}>
-                    <CardContent>
-                      <div className='flex items-start justify-between gap-3 mb-4'>
-                        <div>
-                          <div className='flex items-center gap-2'>
-                            <span className='px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full uppercase tracking-wide'>Utility</span>
-                            <p className='font-bold text-slate-900 text-base'>{bill.title}</p>
-                            <span className='text-xs text-slate-400'>{bill.propertyTitle}</span>
-                          </div>
-                          <div className='flex items-baseline gap-2 mt-0.5'>
-                            <p className='text-2xl font-bold text-indigo-600'>₱{Number(bill.totalAmount ?? bill.amount ?? 0).toLocaleString()}</p>
-                            <span className='text-xs text-slate-500'>total • ₱{Number(bill.perTenantAmount ?? bill.amount ?? 0).toLocaleString()} per tenant {bill.splitCount ? `(÷${bill.splitCount})` : ''}</span>
-                          </div>
-                          <div className='flex items-center gap-3 text-xs text-slate-500 mt-1'>
-                            <span><i className='bi bi-calendar3 mr-1' />{bill.month}</span>
-                            {bill.dueDate && <span><i className='bi bi-clock mr-1' />Due {bill.dueDate}</span>}
-                          </div>
-                        </div>
-                        <div className='flex items-center gap-2'>
-                          <button
-                            onClick={() => handleToggleRevenue(bill.id, !bill.isRevenue)}
-                            title={bill.isRevenue ? 'Counted as revenue — click to exclude' : 'Not counted as revenue — click to include'}
-                            className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-full border transition-colors ${
-                              bill.isRevenue
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                                : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200'
-                            }`}
-                          >
-                            <i className={`bi ${bill.isRevenue ? 'bi-graph-up-arrow' : 'bi-dash-circle'}`} />
-                            {bill.isRevenue ? 'Revenue' : 'Not Revenue'}
-                          </button>
-                          <button onClick={() => handleDeleteBill(bill.id)} className='text-slate-300 hover:text-rose-500 transition-colors'>
-                            <i className='bi bi-trash3 text-sm' />
-                          </button>
-                        </div>
-                      </div>
-                      {tenantEntries.length === 0 ? (
-                        <p className='text-xs text-slate-400'>No approved tenants for this property.</p>
-                      ) : (
-                        <div className='space-y-2'>
-                          <p className='text-xs font-semibold text-slate-500 uppercase tracking-wide'>Tenant Payment Status</p>
-                          {tenantEntries.map(([uid, t]) => {
-                            const payment = billPayments.find(p => p.tenantUid === uid)
-                            const status = payment?.status || 'unpaid'
-                            const cfg = PAYMENT_STATUS[status] || PAYMENT_STATUS.unpaid
-                            return (
-                              <div key={uid} className='flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100'>
-                                <div className='flex items-center gap-2 min-w-0'>
-                                  <div className='w-7 h-7 rounded-full overflow-hidden bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-600 shrink-0'>
-                                    {t.profilePhoto ? <img src={t.profilePhoto} alt='' className='w-full h-full object-cover' /> : t.name.charAt(0).toUpperCase()}
-                                  </div>
-                                  <p className='text-sm font-medium text-slate-900 truncate'>{t.name}</p>
-                                </div>
-                                <div className='flex items-center gap-2 shrink-0'>
-                                  <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${cfg.cls}`}>{cfg.label}</span>
-                                  {payment?.status === 'under_review' && (
-                                    <button onClick={() => setReviewPaymentData({ payment, bill, tenantName: t.name })} className='text-xs text-indigo-600 font-semibold hover:text-indigo-800 px-2 py-1 bg-indigo-50 rounded-lg border border-indigo-200 transition-colors'>Review</button>
-                                  )}
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </div>))}</div>)
-          })()}
-        </div>
-      )}
-
-      {/* ── CHORES ── */}
-      {activeTab === 'chores' && (
-        <div className='space-y-6'>
-          <div className='flex items-center justify-between'>
-            <div>
-              <h2 className='text-lg font-bold text-slate-900' style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}>Chore Management</h2>
-              <p className='text-sm text-slate-500'>Assign and track household chores for your tenants.</p>
-            </div>
-            <Button variant='primary' onClick={() => setShowCreateChore(true)} disabled={properties.length === 0}>
-              <i className='bi bi-plus-lg mr-1.5' /> Create Chore
-            </Button>
-          </div>
-
-          {chores.length === 0 && (
-            <div className='text-center py-16'>
-              <i className='bi bi-check2-circle text-5xl text-slate-300 block mb-3' />
-              <p className='text-slate-500'>No chores created yet.</p>
-            </div>
-          )}
-
-          <div className='space-y-3'>
-            {chores.slice().sort((a, b) => (a.dueDate > b.dueDate ? 1 : -1)).map(chore => {
-              const cfg = CHORE_STATUS[chore.status] || CHORE_STATUS.pending
-              const isOverdue = chore.status === 'pending' && chore.dueDate && chore.dueDate < new Date().toISOString().slice(0, 10)
-              return (
-                <div key={chore.id} className={`flex items-center justify-between gap-3 p-4 rounded-2xl border ${chore.status === 'verified' ? 'bg-emerald-50 border-emerald-100' : isOverdue ? 'bg-rose-50 border-rose-100' : 'bg-white border-slate-100'}`}>
-                  <div className='flex items-center gap-3 min-w-0'>
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${chore.status === 'verified' ? 'bg-emerald-100' : chore.status === 'done' ? 'bg-indigo-100' : isOverdue ? 'bg-rose-100' : 'bg-amber-100'}`}>
-                      <i className={`bi ${chore.status === 'verified' ? 'bi-patch-check-fill text-emerald-600' : chore.status === 'done' ? 'bi-check-circle text-indigo-600' : isOverdue ? 'bi-exclamation-circle text-rose-600' : 'bi-hourglass-split text-amber-600'} text-base`} />
-                    </div>
-                    <div className='min-w-0'>
-                      <div className='flex items-center gap-1.5 flex-wrap'>
-                      <p className={`font-semibold text-sm ${chore.status === 'verified' ? 'line-through text-slate-500' : 'text-slate-900'}`}>{chore.title}</p>
-                      {chore.repeat && chore.repeat !== 'none' && (
-                        <span className='px-1.5 py-0.5 bg-violet-100 text-violet-700 text-[10px] font-bold rounded-full capitalize'>{chore.repeat}</span>
-                      )}
-                    </div>
-                      <p className='text-xs text-slate-500'>{chore.assignedToName} · {chore.propertyTitle}{chore.dueDate && ` · Due ${chore.dueDate}`}{isOverdue && <span className='text-rose-600 font-semibold ml-1'>Overdue</span>}</p>
-                    </div>
-                  </div>
-                  <div className='flex items-center gap-2 shrink-0'>
-                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${cfg.cls}`}>{cfg.label}</span>
-                    {chore.status === 'done' && (
-                      <button onClick={() => handleVerifyChore(chore)} className='text-xs text-emerald-600 font-semibold hover:text-emerald-800 px-2.5 py-1 bg-emerald-50 rounded-lg border border-emerald-200 transition-colors whitespace-nowrap'>Verify</button>
-                    )}
-                    <button onClick={() => handleDeleteChore(chore.id)} className='text-slate-300 hover:text-rose-500 transition-colors'><i className='bi bi-trash3 text-sm' /></button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
       {/* ── MAINTENANCE ── */}
       {activeTab === 'maintenance' && (
         <div className='space-y-6'>
@@ -1360,7 +979,6 @@ export const OwnerDashboard = ({ user }) => {
                   <div className='flex justify-between text-sm'><span className='text-slate-600'>Total Bills Posted</span><span className='font-bold'>{bills.length}</span></div>
                   <div className='flex justify-between text-sm'><span className='text-slate-600'>Paid</span><span className='font-bold text-emerald-600'>{payments.filter(p => p.status === 'paid').length}</span></div>
                   <div className='flex justify-between text-sm'><span className='text-slate-600'>Under Review</span><span className='font-bold text-amber-600'>{payments.filter(p => p.status === 'under_review').length}</span></div>
-                  <div className='flex justify-between text-sm'><span className='text-slate-600'>Chores Verified</span><span className='font-bold text-teal-600'>{chores.filter(c => c.status === 'verified').length}/{chores.length}</span></div>
                 </div>
               </CardContent>
             </Card>
@@ -1427,8 +1045,8 @@ export const OwnerDashboard = ({ user }) => {
                 </div>
               ) : (
                 <div className='p-3.5 bg-amber-50 border border-amber-200 rounded-xl'>
-                  <p className='text-sm font-semibold text-amber-800'>Upload both documents to earn your Verified Landlord badge</p>
-                  <p className='text-xs text-amber-700 mt-1'>Your badge appears automatically once both documents are uploaded. No manual review needed.</p>
+                  <p className='text-sm font-semibold text-amber-800'>Upload both documents for review</p>
+                  <p className='text-xs text-amber-700 mt-1'>The Verified Landlord badge appears after an authorized reviewer approves your documents.</p>
                 </div>
               )}
 
@@ -1497,38 +1115,6 @@ export const OwnerDashboard = ({ user }) => {
       {viewingTenant && <TenantDetailModal tenantUid={viewingTenant.uid} tenantName={viewingTenant.name} onClose={() => setViewingTenant(null)} />}
       {maintenanceCharge && <PostBillModal properties={properties} landlordUid={user.uid} maintenanceRequest={maintenanceCharge} onClose={() => setMaintenanceCharge(null)} />}
       {showPostBill && <PostBillModal properties={properties} landlordUid={user.uid} onClose={() => setShowPostBill(false)} />}
-      {showCreateChore && <ChoreModal properties={properties} landlordUid={user.uid} onClose={() => setShowCreateChore(false)} />}
-
-      {/* Payment review modal */}
-      {reviewPaymentData && (
-        <div className='fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm'>
-          <div className='bg-white rounded-2xl shadow-2xl w-full max-w-sm'>
-            <div className='flex items-center justify-between px-6 py-4 border-b border-slate-100'>
-              <div>
-                <h2 className='font-bold text-slate-900 text-lg' style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}>Review Payment</h2>
-                <p className='text-sm text-slate-500'>{reviewPaymentData.tenantName} — {reviewPaymentData.bill.title}</p>
-              </div>
-              <button onClick={() => setReviewPaymentData(null)} className='text-slate-400 hover:text-slate-700'><i className='bi bi-x-lg text-sm' /></button>
-            </div>
-            <div className='p-6 space-y-4'>
-              <div className='p-3.5 bg-slate-50 rounded-xl border border-slate-100 space-y-2'>
-                <div className='flex justify-between text-sm'><span className='text-slate-500'>Amount</span><span className='font-bold text-slate-900'>₱{Number(reviewPaymentData.payment.amount || reviewPaymentData.bill.perTenantAmount || reviewPaymentData.bill.totalAmount).toLocaleString()}</span></div>
-                <div className='flex justify-between text-sm'><span className='text-slate-500'>GCash Ref #</span><span className='font-mono font-semibold text-slate-900'>{reviewPaymentData.payment.referenceNo}</span></div>
-              </div>
-              {reviewPaymentData.payment.receiptImageBase64 && (
-                <div>
-                  <p className='text-xs text-slate-500 mb-1.5 font-semibold'>Receipt Screenshot</p>
-                  <img src={reviewPaymentData.payment.receiptImageBase64} alt='Receipt' className='w-full rounded-xl border border-slate-200 max-h-56 object-contain cursor-pointer' onClick={() => setLightboxImage(reviewPaymentData.payment.receiptImageBase64)} />
-                </div>
-              )}
-              <div className='flex gap-3 pt-1'>
-                <Button variant='danger' className='flex-1' onClick={() => handleRejectPayment(reviewPaymentData.payment.id, reviewPaymentData.payment.tenantUid, reviewPaymentData.bill.title)}>Reject</Button>
-                <Button variant='success' className='flex-1' onClick={() => handleApprovePayment(reviewPaymentData.payment.id, reviewPaymentData.payment.tenantUid, reviewPaymentData.bill.title, reviewPaymentData.payment.amount)}>Mark Paid</Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <ConfirmModal dialog={dialog} onClose={() => setDialog(null)} />
 

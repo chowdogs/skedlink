@@ -51,6 +51,13 @@ test('landlord can query own subscription',async()=>{
 test('self-service profiles cannot change roles',async()=>{
  await assertFails(updateDoc(doc(env.authenticatedContext('tenant').firestore(),'users','tenant'),{role:'owner'}))
 })
+test('landlords cannot grant themselves verification or create old payment records',async()=>{
+ const owner=env.authenticatedContext('owner').firestore(),tenant=env.authenticatedContext('tenant').firestore()
+ await assertFails(updateDoc(doc(owner,'users','owner'),{isVerified:true}))
+ await assertFails(updateDoc(doc(owner,'properties','room'),{landlordVerified:true}))
+ await assertFails(setDoc(doc(tenant,'payments','manual-proof'),{tenantUid:'tenant',landlordUid:'owner',billId:'bill',status:'under_review'}))
+ await assertFails(setDoc(doc(owner,'chores','old-chore'),{landlordUid:'owner',assignedTo:'tenant',propertyId:'room'}))
+})
 test('contracts are private PDFs and cannot be overwritten',async()=>{
  const storage=env.authenticatedContext('tenant').storage()
  const path='contracts/application/tenant/signed.pdf',bytes=new TextEncoder().encode('%PDF-1.7\nTest')
