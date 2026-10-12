@@ -21,9 +21,11 @@
 
 The frontend is deployed at https://skedlink-taupe.vercel.app from GitHub `main` (implementation commit `afa46ed`). Vercel reported a successful deployment and the public JavaScript bundle contains the new payment and advance workflows.
 
-Firebase backend deployment remains blocked by the project's disabled billing. Cloud Functions is not enabled and the project has no Storage bucket. The project owner must enable Blaze before Functions and private PDF storage can be provisioned. Functions, indexes, Firestore/Storage rules and the legacy-data migration still need deployment. A recursive read-only backup captured 103 existing Firestore documents in ignored local artifacts; no production database records were changed.
+Firebase Blaze is enabled. All 12 Cloud Functions are deployed in `asia-southeast1`, together with Firestore indexes, privacy rules and private Storage rules. The `skedlink.firebasestorage.app` bucket is provisioned. A recursive backup captured 103 existing documents before migration. Migration updated four room records, two tenant summaries, two landlord inventories and six legacy shared bills; originals are retained in the server-only archive.
 
-PayMongo code is restricted to **test keys**. The supplied test key was accepted by PayMongo. A real provider test checkout session was created with card, GCash and Maya enabled, then expired without payment. The key is saved only in an ignored local secret file, pending upload to Firebase Secret Manager. Webhook registration, the signing secret and end-to-end payment confirmation remain pending backend deployment. Automated settlement tests use mocked provider responses.
+PayMongo is restricted to **test keys**. API and webhook secrets are stored in Firebase Secret Manager. The test webhook is enabled at `https://asia-southeast1-skedlink.cloudfunctions.net/paymongoWebhook`. Real hosted test-card payments completed for a PHP 10,000 move-in bill and a PHP 300 subscription. Without manually refreshing checkout, the webhook activated tenancy, created one receipt, credited PHP 6,000 advance and PHP 2,000 deposit, recorded PHP 60 commission, and activated the two-listing subscription. A subsequent landlord-approved PHP 2,000 advance request paid a rent bill and left PHP 4,000 advance with the deposit unchanged. These were test transactions, with no real money moved.
+
+The reused PayMongo account displays **Joe Bean Coffee Shop** on its hosted checkout. This is the account's existing merchant branding, not a SkedLink frontend label. It was preserved as requested when reusing the old project's key.
 
 The commission is a test accounting entry. Automated marketplace split payouts, escrow custody, refunds and dispute handling are not implemented. Gateway processing charges are not represented as platform revenue. Do not describe the demo as real escrow or payouts.
 
@@ -32,6 +34,8 @@ The default contract template is intentionally deferred until the user supplies 
 ## Setup
 
 Use Node 22 for Firebase deployment. The local workspace has Node 24; tests and builds were run there as well.
+
+The Functions lockfile is generated with npm 10 to match Cloud Build. The Firebase 12 test SDK and its app/compat packages are pinned to compatible versions to avoid mixed SDK instances in rules tests. HTTP functions explicitly declare public invocation; callable handlers still require Firebase authentication, and the webhook still requires the PayMongo signature.
 
 ```powershell
 npm ci
@@ -50,6 +54,8 @@ node functions/node_modules/firebase-tools/lib/bin/firebase.js functions:secrets
 Set `APP_URL` to the actual frontend origin when Firebase prompts, or in the ignored `functions/.env.skedlink` file. Configure a PayMongo **test-mode** webhook for `checkout_session.payment.paid`, targeting the deployed `paymongoWebhook` URL. Functions use `asia-southeast1`.
 
 Deployment requires a Firebase project with Functions and Storage provisioned, and an appropriate billing plan. For storage downloads, configure bucket CORS for the actual frontend origin if needed. Do not put secret keys in `REACT_APP_*`.
+
+Storage rules read application participants from Firestore. The Storage service agent needs `roles/firebaserules.firestoreServiceAgent` on the project; the Firebase CLI skips this setup in non-interactive mode. Production CORS permits the Vercel origin and localhost. Container image cleanup is configured for three days in `asia-southeast1`.
 
 ### Existing data rollout
 
@@ -90,7 +96,7 @@ Tests use only the `demo-skedlink` emulator project. A Windows emulator may leav
 - 4 React interaction tests passed.
 - 12 rental-domain tests passed.
 - 16 Firestore/Storage rules and workflow integration tests passed against local emulators.
-- The production build compiled successfully and the frontend was deployed through Vercel. Provider test checkout creation and expiration passed; browser-based payment completion and webhook delivery remain pending backend deployment.
+- The production build compiled successfully and the frontend was deployed through Vercel. Live browser checks passed for both dashboards and the paid itemized statement without browser errors. Contract exchange, private PDF download, hosted test-card checkout, automatic webhook settlement, subscription activation and advance approval were verified against deployed services using temporary test accounts.
 - Production-only dependency audit for the new Functions package reported zero known vulnerabilities. Development tooling and the existing frontend dependency tree are not covered by that result.
 
 ## Defense walkthrough after deployment

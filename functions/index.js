@@ -19,7 +19,7 @@ function owner(p, uid) { must(p.ownerId === uid, 'This listing belongs to anothe
 const privateSummary = u => ({ name: u.fullName || 'Tenant', profilePhoto: u.profilePhoto || '' })
 const participant = (i, uid) => must([i.tenantUid, i.landlordUid].includes(uid), 'You cannot access this application.')
 
-exports.platform = onCall({ region }, async request => {
+exports.platform = onCall({ region, invoker: 'public' }, async request => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in first.')
   try {
     const uid = request.auth.uid, data = request.data || {}, user = await record('users', uid)
@@ -236,7 +236,7 @@ async function paymongo(path, method = 'GET', body) {
   return result.data
 }
 
-exports.createCheckout = onCall({ region, secrets: [paymongoKey] }, async request => {
+exports.createCheckout = onCall({ region, invoker: 'public', secrets: [paymongoKey] }, async request => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in first.')
   const uid = request.auth.uid, data = request.data || {}, orderRef = db.collection('checkoutOrders').doc()
   try {
@@ -336,7 +336,7 @@ async function settle(session) {
   })
 }
 
-exports.refreshCheckout = onCall({ region, secrets: [paymongoKey] }, async request => {
+exports.refreshCheckout = onCall({ region, invoker: 'public', secrets: [paymongoKey] }, async request => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in first.')
   try {
     const o = await record('checkoutOrders', request.data.id); must(o.uid === request.auth.uid, 'Not your payment.')
@@ -361,7 +361,7 @@ exports.refreshCheckout = onCall({ region, secrets: [paymongoKey] }, async reque
   } catch (error) { throw new HttpsError('failed-precondition', error.message) }
 })
 
-exports.paymongoWebhook = onRequest({ region, secrets: [paymongoKey, webhookKey] }, async (req, res) => {
+exports.paymongoWebhook = onRequest({ region, invoker: 'public', secrets: [paymongoKey, webhookKey] }, async (req, res) => {
   if (req.method !== 'POST') return res.sendStatus(405)
   try {
     const parts = Object.fromEntries(String(req.get('Paymongo-Signature') || '').split(',').map(v => v.trim().split('=')))
