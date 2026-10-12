@@ -8,8 +8,9 @@ import {
   reauthenticateWithCredential,
   EmailAuthProvider
 } from 'firebase/auth'
-import { doc, setDoc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore'
+import { doc, setDoc, getDoc, updateDoc, onSnapshot, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from '../firebase'
+import { TERMS_VERSION } from '../lib/terms'
 
 const AuthContext = createContext(null)
 
@@ -20,7 +21,8 @@ export const AuthProvider = ({ children }) => {
   const [userProfile, setUserProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  const register = async (email, password, fullName, role, phone) => {
+  const register = async (email, password, fullName, role, phone, termsAccepted) => {
+    if (!termsAccepted) throw new Error('Please accept the Terms and Conditions to create an account.')
     const { user } = await createUserWithEmailAndPassword(auth, email, password)
     const profile = {
       uid: user.uid,
@@ -29,11 +31,14 @@ export const AuthProvider = ({ children }) => {
       role,
       phone: phone || '',
       weeklySchedule: {},
-      customActivities: []
+      customActivities: [],
+      termsVersion: TERMS_VERSION,
+      termsAcceptedAt: serverTimestamp()
     }
     await setDoc(doc(db, 'users', user.uid), profile)
-    setUserProfile(profile)
-    return profile
+    const savedProfile = (await getDoc(doc(db, 'users', user.uid))).data()
+    setUserProfile(savedProfile)
+    return savedProfile
   }
 
   const login = async (email, password) => {

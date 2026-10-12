@@ -2,7 +2,7 @@ const {test,before,after}=require('node:test')
 const assert=require('node:assert/strict')
 const fs=require('node:fs')
 const {initializeTestEnvironment,assertFails,assertSucceeds}=require('@firebase/rules-unit-testing')
-const {doc,setDoc,getDoc,updateDoc,collection,getDocs,query,where}=require('firebase/firestore')
+const {doc,setDoc,getDoc,updateDoc,collection,getDocs,query,where,serverTimestamp}=require('firebase/firestore')
 const {ref,uploadBytes,getBytes}=require('firebase/storage')
 const projectId='demo-skedlink'
 let env
@@ -50,6 +50,14 @@ test('landlord can query own subscription',async()=>{
 })
 test('self-service profiles cannot change roles',async()=>{
  await assertFails(updateDoc(doc(env.authenticatedContext('tenant').firestore(),'users','tenant'),{role:'owner'}))
+})
+test('registration records the accepted terms version and timestamp',async()=>{
+ const db=env.authenticatedContext('new-tenant').firestore(),user=doc(db,'users','new-tenant')
+ const profile={uid:'new-tenant',role:'seeker',email:'new@example.test',fullName:'New Tenant',phone:'',weeklySchedule:{},customActivities:[]}
+ await assertFails(setDoc(user,profile))
+ await assertFails(setDoc(user,{...profile,termsVersion:'old',termsAcceptedAt:serverTimestamp()}))
+ await assertSucceeds(setDoc(user,{...profile,termsVersion:'2026-10-12',termsAcceptedAt:serverTimestamp()}))
+ await assertFails(updateDoc(user,{termsVersion:'old'}))
 })
 test('landlords cannot grant themselves verification or create old payment records',async()=>{
  const owner=env.authenticatedContext('owner').firestore(),tenant=env.authenticatedContext('tenant').firestore()

@@ -29,7 +29,9 @@ The reused PayMongo account displays **Joe Bean Coffee Shop** on its hosted chec
 
 The commission is a test accounting entry. Automated marketplace split payouts, escrow custody, refunds and dispute handling are not implemented. Gateway processing charges are not represented as platform revenue. Do not describe the demo as real escrow or payouts.
 
-Landlords can download a blank, printable HTML rental agreement draft from Applications & contracts, fill it in, and save it as PDF from the browser before uploading it. The draft has no automatic legal review or digital-signature verification.
+Landlords can download the supplied PDF agreement from Applications & contracts before uploading a completed contract. The PDF has no automatic legal review or digital-signature verification.
+
+Registration requires the user to open and accept the current Terms and Conditions. The accepted version and server timestamp are stored on the private user profile; Firestore rules reject new profiles without them. The terms text is a product draft and should be reviewed before using the service for real transactions.
 
 ## Setup
 
@@ -107,9 +109,9 @@ Tests use only the `demo-skedlink` emulator project. A Windows emulator may leav
 
 ### Verification results
 
-- 4 React interaction tests passed.
+- 5 React interaction tests passed.
 - 12 rental-domain tests passed.
-- 20 Firestore/Storage rules and workflow integration tests passed against local emulators, including deletion cleanup and landlord verification sync.
+- 21 Firestore/Storage rules and workflow integration tests passed against local emulators, including deletion cleanup, landlord verification sync, and terms acceptance.
 - The production build compiled successfully and the frontend was deployed through Vercel. Live browser checks passed for both dashboards and the paid itemized statement without browser errors. Contract exchange, private PDF download, hosted test-card checkout, automatic webhook settlement, subscription activation and advance approval were verified against deployed services using temporary test accounts.
 - Production-only dependency audit for the new Functions package reported zero known vulnerabilities. Development tooling and the existing frontend dependency tree are not covered by that result.
 

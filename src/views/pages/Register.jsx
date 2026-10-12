@@ -2,6 +2,7 @@ import { PLANS, money } from '../../lib/rentalTerms'
 import React, { useState } from 'react'
 import { Input, Label } from '../ui/Input'
 import { useAuth } from '../../contexts/AuthContext'
+import { TermsModal } from '../components/TermsModal'
 
 export const Register = ({ onRegister, onGoToLogin, onBack }) => {
   const { register } = useAuth()
@@ -15,16 +16,19 @@ export const Register = ({ onRegister, onGoToLogin, onBack }) => {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPw, setShowPw] = useState(false)
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  const [showTerms, setShowTerms] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
     if (password !== confirmPassword) { setError('Passwords do not match.'); return }
     if (password.length < 6) { setError('Password must be at least 6 characters.'); return }
+    if (!termsAccepted) { setError('Please accept the Terms and Conditions to create an account.'); return }
     setLoading(true)
     try {
       if (role === 'owner' && selectedPlan > 1) window.sessionStorage.setItem('skedlink:onboarding-plan', String(selectedPlan))
-      const profile = await register(email, password, fullName, role, phone)
+      const profile = await register(email, password, fullName, role, phone, termsAccepted)
       onRegister(profile)
     } catch (err) {
       setError(err.message.replace('Firebase: ', '').replace(/\(auth\/.*\)\.?/, '').trim())
@@ -176,6 +180,10 @@ export const Register = ({ onRegister, onGoToLogin, onBack }) => {
             )}
 
             {role === 'owner' && <label className='block text-sm font-medium'>Landlord plan<select className='block w-full border rounded-xl p-3 mt-1' value={selectedPlan} onChange={e => setSelectedPlan(Number(e.target.value))}>{PLANS.map(p => <option key={p.limit} value={p.limit}>{p.label} — {p.limit} room(s) — {money(p.amount)} / month</option>)}</select><span className='block text-xs text-slate-500 mt-2'>Free includes one room. Paid access activates after checkout in Plans; no trial.</span></label>}
+            <div className='flex items-start gap-2.5 text-sm text-slate-600'>
+              <input id='termsAccepted' type='checkbox' checked={termsAccepted} onChange={e => setTermsAccepted(e.target.checked)} required className='mt-1 h-4 w-4 shrink-0 accent-indigo-600' />
+              <span><label htmlFor='termsAccepted'>I have read and agree to the </label><button type='button' onClick={() => setShowTerms(true)} className='font-semibold text-indigo-700 underline underline-offset-2 hover:text-indigo-900'>Terms and Conditions</button>.</span>
+            </div>
             <button
               type='submit'
               disabled={loading}
@@ -201,6 +209,7 @@ export const Register = ({ onRegister, onGoToLogin, onBack }) => {
           </div>
         </div>
       </div>
+      {showTerms && <TermsModal onClose={() => setShowTerms(false)} />}
     </div>
   )
 }

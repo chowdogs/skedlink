@@ -539,9 +539,9 @@ export const SeekerDashboard = ({ user }) => {
               { icon: 'bi-briefcase', label: 'Occupation', value: user.occupation || '—', grad: 'from-indigo-500 to-cyan-500', small: true },
             ].map(s => (
               <Card key={s.label}>
-                <CardContent className='flex items-center gap-4'>
+                <CardContent className='flex items-center gap-4 pt-6'>
                   <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${s.grad} flex items-center justify-center shrink-0 shadow-md`}>
-                    <i className={`bi ${s.icon} text-white text-lg`} />
+                    <i className={`bi ${s.icon} inline-flex items-center justify-center leading-none text-white text-lg`} />
                   </div>
                   <div className='min-w-0'>
                     <p className={`font-bold text-slate-900 truncate ${s.small ? 'text-base' : 'text-2xl'}`} style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}>{s.value}</p>

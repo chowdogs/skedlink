@@ -498,9 +498,9 @@ export const OwnerDashboard = ({ user }) => {
               { icon: 'bi-envelope', label: 'New Inquiries', value: inquiries.filter(i => i.status === 'pending').length, grad: 'from-rose-500 to-pink-500' },
             ].map(s => (
               <Card key={s.label}>
-                <CardContent className='flex items-center gap-4'>
+                <CardContent className='flex items-center gap-4 pt-6'>
                   <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${s.grad} flex items-center justify-center shrink-0 shadow-md`}>
-                    <i className={`bi ${s.icon} text-white text-lg`} />
+                    <i className={`bi ${s.icon} inline-flex items-center justify-center leading-none text-white text-lg`} />
                   </div>
                   <div>
                     <p className='text-2xl font-bold text-slate-900' style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}>{s.value}</p>
@@ -925,9 +925,9 @@ export const OwnerDashboard = ({ user }) => {
               { icon: 'bi-building', label: 'Est. Monthly Rent', value: `₱${estMonthlyRent.toLocaleString()}`, grad: 'from-indigo-500 to-violet-500', desc: `${occupiedSlots} occupied slot${occupiedSlots !== 1 ? 's' : ''}` },
             ].map(s => (
               <Card key={s.label}>
-                <CardContent className='flex items-center gap-4'>
+                <CardContent className='flex items-center gap-4 pt-6'>
                   <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${s.grad} flex items-center justify-center shrink-0 shadow-md`}>
-                    <i className={`bi ${s.icon} text-white text-xl`} />
+                    <i className={`bi ${s.icon} inline-flex items-center justify-center leading-none text-white text-xl`} />
                   </div>
                   <div>
                     <p className='text-2xl font-bold text-slate-900' style={{ fontFamily: 'Plus Jakarta Sans, sans-serif' }}>{s.value}</p>

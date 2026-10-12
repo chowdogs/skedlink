@@ -10,7 +10,7 @@ service cloud.firestore {
     function changedOnly(fields) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields); }
     match /users/{uid} {
       allow read: if self(uid);
-      allow create: if self(uid) && request.resource.data.uid == uid && request.resource.data.role in ['owner','seeker'] && request.resource.data.keys().hasOnly(['uid','email','fullName','role','phone','weeklySchedule','customActivities']);
+      allow create: if self(uid) && request.resource.data.uid == uid && request.resource.data.role in ['owner','seeker'] && request.resource.data.termsVersion == '2026-10-12' && request.resource.data.termsAcceptedAt == request.time && request.resource.data.keys().hasOnly(['uid','email','fullName','role','phone','weeklySchedule','customActivities','termsVersion','termsAcceptedAt']);
       allow update: if self(uid) && changedOnly(['fullName','phone','weeklySchedule','customActivities','profilePhoto','gender','age','occupation','bio','validIdUrl','verificationDocs']);
     }
     // All listing writes go through server validation. Only safe household summaries are stored here.

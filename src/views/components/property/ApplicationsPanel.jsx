@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { uploadContract, downloadContract, platform } from '../../../lib/platform'
 import { money, formatDate } from '../../../lib/rentalTerms'
 import { Button } from '../../ui/Button'
+import agreementPdf from '../../../contract/sched link contract.pdf'
 
 export const ApplicationsPanel = ({ inquiries, user, landlord = false }) => {
   const [busy,setBusy] = useState(false), [msg,setMsg] = useState('')
@@ -10,7 +11,7 @@ export const ApplicationsPanel = ({ inquiries, user, landlord = false }) => {
     const document = await uploadContract(file,`contracts/${i.id}/${user.uid}/${Date.now()}.pdf`)
     await platform(landlord ? 'sendContract' : 'submitContract',{id:i.id,file:document})
   })
-  return <section className='space-y-4'><div><h2 className='text-xl font-bold'>Applications & contracts</h2><p className='text-sm text-slate-500'>Application → signed contract → confirmed payment → active tenancy. Contract reservations last 48 hours.</p>{landlord && <a className='inline-block mt-2 text-sm font-semibold text-indigo-700 underline' href='/contract-template.html' download='skedlink-rental-agreement-draft.html'>Download blank agreement draft</a>}</div>
+  return <section className='space-y-4'><div><h2 className='text-xl font-bold'>Applications & contracts</h2><p className='text-sm text-slate-500'>Application → signed contract → confirmed payment → active tenancy. Contract reservations last 48 hours.</p>{landlord && <a className='inline-block mt-2 text-sm font-semibold text-indigo-700 underline' href={agreementPdf} download='sched-link-contract.pdf' type='application/pdf'>Download agreement PDF</a>}</div>
     {msg && <p role='status' className='bg-indigo-50 p-3 rounded-xl text-sm'>{msg}</p>}
     {!inquiries.length && <p className='p-5 border rounded-xl bg-white text-slate-500'>No applications yet.</p>}
     {inquiries.map(i => <article key={i.id} className='p-5 border rounded-2xl bg-white space-y-3'>
